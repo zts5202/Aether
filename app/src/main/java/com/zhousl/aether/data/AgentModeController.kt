@@ -12,6 +12,7 @@ import android.util.Base64
 import android.view.Display
 import android.view.Surface
 import androidx.core.content.getSystemService
+import com.zhousl.aether.R
 import com.zhousl.aether.agentmode.AgentModeServiceHandle
 import com.zhousl.aether.agentmode.AgentModeServiceLauncher
 import com.zhousl.aether.agentmode.IAetherAgentModeService
@@ -116,6 +117,8 @@ class AgentModeController(
     private val runtimeWorkspaceFileBridge: RuntimeWorkspaceFileBridge,
     private val diagnosticLogger: AetherDiagnosticLogger = AetherDiagnosticLogger.NoOp,
 ) {
+    private fun ui(resId: Int, vararg args: Any): String = context.getString(resId, *args)
+
     private val displayManager = context.getSystemService<DisplayManager>()!!
     private val cacheDirectory = File(context.cacheDir, "agent-mode").apply { mkdirs() }
     private val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -143,7 +146,7 @@ class AgentModeController(
                 )
                 _authorizationState.value = if (!PhoneUseAccessibilityService.connected.value) {
                     AgentModeAuthorizationState(AgentModeAuthorizationIssue.AccessibilityMissing,
-                        "Enable Aether in Android Accessibility settings.")
+                        ui(R.string.agent_mode_enable_accessibility))
                 } else if (grantResult == PackageManager.PERMISSION_GRANTED) {
                     diagnosticLogger.event(
                         category = "agent_mode",
@@ -151,7 +154,7 @@ class AgentModeController(
                     )
                     AgentModeAuthorizationState(
                         issue = AgentModeAuthorizationIssue.Ready,
-                        detail = "Shizuku permission is granted.",
+                        detail = ui(R.string.agent_mode_shizuku_granted),
                     )
                 } else {
                     diagnosticLogger.event(
@@ -161,7 +164,7 @@ class AgentModeController(
                     )
                     AgentModeAuthorizationState(
                         issue = AgentModeAuthorizationIssue.ShizukuPermissionDenied,
-                        detail = "Shizuku permission was denied. Grant Aether permission in Shizuku before using Phone Use.",
+                        detail = ui(R.string.agent_mode_shizuku_denied),
                     )
                 }
                 controllerScope.launch {
@@ -171,7 +174,7 @@ class AgentModeController(
                             authorizeVirtualDisplay(AgentModeAuthorizationMethod.Shizuku)
                         } else {
                             _virtualDisplayAuthorizationState.value = AgentModeAuthorizationState(
-                                AgentModeAuthorizationIssue.ShizukuPermissionDenied, "Shizuku permission was denied.", AgentModeAuthorizationMethod.Shizuku)
+                                AgentModeAuthorizationIssue.ShizukuPermissionDenied, ui(R.string.agent_mode_shizuku_denied_short), AgentModeAuthorizationMethod.Shizuku)
                         }
                     }
                     refreshAuthorization(authorizationSettings)
@@ -182,10 +185,10 @@ class AgentModeController(
         if (authorizationSettings.agentModeAuthorizationEnabled && authorizationSettings.phoneUseAuthorizationMethod == AgentModeAuthorizationMethod.Shizuku) {
             _authorizationState.value = AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.ShizukuNotRunning,
-                detail = "Shizuku stopped. Start Shizuku, then refresh Phone Use status.",
+                detail = ui(R.string.agent_mode_shizuku_stopped),
             )
         }
-        clearShizukuService("Shizuku stopped. Phone Use virtual display was reset.")
+        clearShizukuService(ui(R.string.agent_mode_shizuku_stopped_reset))
     }
 
     private var displayOrientationOverride: AgentModeDisplayOrientation? = null
@@ -225,25 +228,25 @@ class AgentModeController(
                     settings = settings,
                     action = "unknown",
                     reason = "authorization_disabled",
-                    message = "Phone Use is not authorized.",
+                    message = ui(R.string.agent_mode_not_authorized),
                 )
                 return@withLock JSONObject().apply {
                     put("ok", false)
-                    put("errmsg", "Phone Use is not authorized. Enable it in Settings > Phone Use first.")
+                    put("errmsg", ui(R.string.agent_mode_not_authorized_settings))
                 }.toString()
             }
             if (hasRefreshedAuthorization &&
                 authorizationSettings.phoneUseAuthorizationMethod != settings.phoneUseAuthorizationMethod) {
-                return@withLock toolError("Phone Use mode changed during this turn. Start a new turn to use the selected mode.", "unknown")
+                return@withLock toolError(ui(R.string.agent_mode_mode_changed), "unknown")
             }
 
             val arguments = runCatching { JSONObject(argumentsJson) }.getOrNull()
-                ?: return@withLock invalidArguments("Arguments were not valid JSON.").also {
+                ?: return@withLock invalidArguments(ui(R.string.agent_mode_invalid_json)).also {
                     captureAgentModeFailed(
                         settings = settings,
                         action = "unknown",
                         reason = "invalid_arguments",
-                        message = "Arguments were not valid JSON.",
+                        message = ui(R.string.agent_mode_invalid_json),
                     )
                 }
             val action = arguments.optString("action").trim().lowercase()
@@ -353,9 +356,9 @@ class AgentModeController(
                         JSONObject().apply {
                             put("ok", !returnToAether || returned)
                             put("returned_to_aether", returned)
-                            put("stdout", if (returned) "Phone Use stopped. Aether is now in the foreground."
-                                else "Phone Use session stopped.")
-                            if (returnToAether && !returned) put("errmsg", "Phone Use stopped, but Android did not confirm that Aether returned to the foreground.")
+                            put("stdout", if (returned) ui(R.string.agent_mode_stopped_foreground)
+                                else ui(R.string.agent_mode_session_stopped))
+                            if (returnToAether && !returned) put("errmsg", ui(R.string.agent_mode_stopped_not_foreground))
                         }.toString()
                     }
                     else -> invalidArguments("Unsupported action '$action'.")
@@ -416,7 +419,7 @@ class AgentModeController(
         authorizationSettings = settings
         hasRefreshedAuthorization = true
         if (!settings.agentModeAuthorizationEnabled || !PhoneUseAccessibilityService.connected.value) {
-            releaseDisplay("Phone Use disabled or Accessibility disconnected.")
+            releaseDisplay(ui(R.string.agent_mode_disabled_or_disconnected))
         }
         if (_displayState.value.isActive && !_displayState.value.isVirtualDisplay &&
             settings.phoneUseAuthorizationMethod != AgentModeAuthorizationMethod.Accessibility) releaseDisplay()
@@ -425,7 +428,7 @@ class AgentModeController(
             displayOwnerMethod != null &&
             displayOwnerMethod != settings.phoneUseAuthorizationMethod
         ) {
-            releaseDisplay("Virtual display reset because Phone Use authorization method changed.")
+            releaseDisplay(ui(R.string.agent_mode_auth_method_changed))
         }
         _authorizationState.value = inspectAuthorization(settings).also { state ->
             diagnosticLogger.event(
@@ -468,7 +471,7 @@ class AgentModeController(
             Shizuku.requestPermission(ShizukuPermissionRequestCode)
             AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.ShizukuPermissionMissing,
-                detail = "Confirm the Shizuku permission prompt, then refresh Phone Use status.",
+                detail = ui(R.string.agent_mode_confirm_shizuku),
             )
         }.getOrElse { throwable ->
             AetherAnalytics.capture(
@@ -483,7 +486,7 @@ class AgentModeController(
             )
             AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.Error,
-                detail = throwable.message ?: "Failed to request Shizuku permission.",
+                detail = throwable.message ?: ui(R.string.agent_mode_shizuku_request_failed),
             )
         }.also { _authorizationState.value = it }
     }
@@ -495,7 +498,7 @@ class AgentModeController(
     suspend fun authorizeVirtualDisplay(method: AgentModeAuthorizationMethod) {
         _virtualDisplayAuthorizationState.value = AgentModeAuthorizationState()
         _virtualDisplayAuthorizationState.value = try {
-            check(Build.VERSION.SDK_INT >= 30) { "Virtual Display requires Android 11 or later." }
+            check(Build.VERSION.SDK_INT >= 30) { ui(R.string.agent_mode_requires_android_11) }
             when (method) {
                 AgentModeAuthorizationMethod.Root -> requireRootService()
                 AgentModeAuthorizationMethod.Shizuku -> {
@@ -512,9 +515,9 @@ class AgentModeController(
                     }
                     requireShizukuService()
                 }
-                AgentModeAuthorizationMethod.Accessibility -> error("Select Root or Shizuku.")
+                AgentModeAuthorizationMethod.Accessibility -> error(ui(R.string.agent_mode_select_root_or_shizuku))
             }
-            AgentModeAuthorizationState(AgentModeAuthorizationIssue.Ready, "Virtual Display authorized.", method)
+            AgentModeAuthorizationState(AgentModeAuthorizationIssue.Ready, ui(R.string.agent_mode_virtual_authorized), method)
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             AgentModeAuthorizationState(AgentModeAuthorizationIssue.Error, error.message.orEmpty(), method)
@@ -523,11 +526,11 @@ class AgentModeController(
 
     private suspend fun ensureDisplay(settings: AppSettings): Int {
         check(!hasRefreshedAuthorization || authorizationSettings.agentModeAuthorizationEnabled) {
-            "Phone Use was disabled during this turn."
+            ui(R.string.agent_mode_disabled_during_turn)
         }
         check(!hasRefreshedAuthorization ||
             authorizationSettings.phoneUseAuthorizationMethod == settings.phoneUseAuthorizationMethod) {
-            "Phone Use mode changed during this turn. Start a new turn to use the selected mode."
+            ui(R.string.agent_mode_mode_changed)
         }
         PhoneUseAccessibilityService.requireConnected()
         if (settings.phoneUseAuthorizationMethod == AgentModeAuthorizationMethod.Accessibility) {
@@ -535,12 +538,12 @@ class AgentModeController(
             val spec = currentDeviceDisplaySpec()
             _displayState.value = _displayState.value.copy(
                 isActive = true, isVirtualDisplay = false, displayId = Display.DEFAULT_DISPLAY,
-                width = spec.width, height = spec.height, status = "Phone Use foreground ready",
+                width = spec.width, height = spec.height, status = ui(R.string.agent_mode_foreground_ready),
                 lastUpdatedMillis = System.currentTimeMillis(),
             )
             return Display.DEFAULT_DISPLAY
         }
-        check(Build.VERSION.SDK_INT >= 30) { "Virtual Display accessibility requires Android 11 or later." }
+        check(Build.VERSION.SDK_INT >= 30) { ui(R.string.agent_mode_virtual_requires_android_11) }
         val orientation = displayOrientationOverride ?:
             (if (hasRefreshedAuthorization) authorizationSettings else settings).agentModeDisplayOrientation
         val service = requireAgentModeService(settings)
@@ -549,7 +552,7 @@ class AgentModeController(
             if (isCurrentDisplayOwner(settings, serviceBinder) && createdDisplayOrientation == orientation) {
                 return displayId
             }
-            releaseDisplay("Virtual display reset because Phone Use service or orientation changed. Relaunch the target app.", preserveOrientationOverride = true)
+            releaseDisplay(ui(R.string.agent_mode_orientation_reset), preserveOrientationOverride = true)
         }
         val deviceSpec = currentDeviceDisplaySpec()
         val (width, height) = agentModeDisplayDimensions(deviceSpec.width, deviceSpec.height, orientation)
@@ -582,7 +585,7 @@ class AgentModeController(
             width = displaySpec.width,
             height = displaySpec.height,
             displays = currentDisplays(settings, displayId),
-            status = "${settings.phoneUseAuthorizationMethod.displayName} virtual display ready",
+            status = ui(R.string.agent_mode_virtual_display_ready),
             lastUpdatedMillis = System.currentTimeMillis(),
         )
         attachCurrentPreviewSurface(settings, displayId)
@@ -616,7 +619,7 @@ class AgentModeController(
         _displayState.value = state.copy(
             isLivePreviewActive = false,
             status = if (state.isActive) {
-                "${settings.phoneUseAuthorizationMethod.displayName} virtual display ready"
+                ui(R.string.agent_mode_virtual_display_ready)
             } else {
                 state.status
             },
@@ -642,7 +645,7 @@ class AgentModeController(
             if (state.displayId == displayId && state.isActive) {
                 _displayState.value = state.copy(
                     isLivePreviewActive = true,
-                    status = "Streaming virtual display",
+                    status = ui(R.string.agent_mode_streaming),
                     lastUpdatedMillis = System.currentTimeMillis(),
                 )
             }
@@ -651,7 +654,7 @@ class AgentModeController(
             if (state.displayId == displayId && state.isActive) {
                 _displayState.value = state.copy(
                     isLivePreviewActive = false,
-                    status = throwable.message ?: "Live preview surface is not available.",
+                    status = throwable.message ?: ui(R.string.agent_mode_preview_unavailable),
                     lastUpdatedMillis = System.currentTimeMillis(),
                 )
             }
@@ -872,7 +875,7 @@ class AgentModeController(
             latestPreviewPath = previewPath,
             latestWorkspacePath = workspacePath,
             lastUpdatedMillis = System.currentTimeMillis(),
-            status = "Captured virtual display",
+            status = ui(R.string.agent_mode_captured),
         )
         return JSONObject().apply {
             put("ok", true)
@@ -973,7 +976,7 @@ class AgentModeController(
                 },
             )
             put("screenshot_path", state.latestWorkspacePath)
-            put("stdout", if (state.isActive) "Phone Use display is active." else "Phone Use display is stopped.")
+            put("stdout", if (state.isActive) ui(R.string.agent_mode_display_active) else ui(R.string.agent_mode_display_stopped))
         }.toString()
     }
 
@@ -1017,7 +1020,7 @@ class AgentModeController(
             .getOrElse { throwable ->
                 if (displayOwnerMethod == settings.phoneUseAuthorizationMethod) {
                     releaseDisplay(
-                        throwable.message ?: "Virtual display reset because Phone Use service is unavailable."
+                        throwable.message ?: ui(R.string.agent_mode_service_unavailable_reset)
                     )
                 }
                 return null
@@ -1025,7 +1028,7 @@ class AgentModeController(
         if (isCurrentDisplayOwner(settings, service.asBinder())) {
             return displayId
         }
-        releaseDisplay("Virtual display reset because Phone Use authorization service changed.")
+        releaseDisplay(ui(R.string.agent_mode_auth_service_changed))
         return null
     }
 
@@ -1143,7 +1146,7 @@ class AgentModeController(
 
     private suspend fun requireAgentModeService(settings: AppSettings): IAetherAgentModeService =
         when (settings.phoneUseAuthorizationMethod) {
-            AgentModeAuthorizationMethod.Accessibility -> error("Foreground Phone Use does not require a privileged service.")
+            AgentModeAuthorizationMethod.Accessibility -> error(ui(R.string.agent_mode_foreground_no_privileged))
             AgentModeAuthorizationMethod.Shizuku -> requireShizukuService()
             AgentModeAuthorizationMethod.Root -> requireRootService()
         }
@@ -1154,15 +1157,15 @@ class AgentModeController(
             if (existing.asBinder().isBinderAlive) {
                 return@withContext existing
             }
-            clearRootService("Root Phone Use service disconnected. Virtual display was reset.")
+            clearRootService(ui(R.string.agent_mode_root_disconnected))
         }
         val suPath = findSuPath()
         if (suPath.isBlank()) {
             _authorizationState.value = AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.RootUnavailable,
-                detail = "No su binary was detected on this device.",
+                detail = ui(R.string.root_no_su),
             )
-            error("No su binary was detected on this device.")
+            error(ui(R.string.root_no_su))
         }
         val handle = runCatching {
             AgentModeServiceLauncher.launch(context, AgentModeServiceStartTimeoutMillis) { command ->
@@ -1178,10 +1181,10 @@ class AgentModeController(
             )
             _authorizationState.value = AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.RootPermissionDenied,
-                detail = "Root Phone Use service failed to start. Check that su can be granted to Aether.",
+                detail = ui(R.string.agent_mode_root_failed),
             )
             error(
-                "Root Phone Use service failed to start. Check that su can be granted to Aether. " +
+                ui(R.string.agent_mode_root_failed) + " " +
                     throwable.message.orEmpty()
             )
         }
@@ -1190,7 +1193,7 @@ class AgentModeController(
         rootService = service
         _authorizationState.value = AgentModeAuthorizationState(
             issue = AgentModeAuthorizationIssue.Ready,
-            detail = "Root Phone Use service is connected.",
+            detail = ui(R.string.agent_mode_root_connected),
         )
         service
     }
@@ -1202,13 +1205,13 @@ class AgentModeController(
             if (existing.asBinder().isBinderAlive) {
                 return@withLock existing
             }
-            clearShizukuService("Shizuku Phone Use service disconnected. Virtual display was reset.")
+            clearShizukuService(ui(R.string.agent_mode_shizuku_disconnected))
         }
         if (!Shizuku.pingBinder()) {
-            error("Shizuku is not running.")
+            error(ui(R.string.agent_mode_shizuku_not_running))
         }
         if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-            error("Aether does not have Shizuku permission. Grant it in Shizuku first.")
+            error(ui(R.string.agent_mode_shizuku_permission_missing))
         }
         diagnosticLogger.event(
             category = "agent_mode",
@@ -1249,7 +1252,7 @@ class AgentModeController(
         runCatching {
             service.asBinder().linkToDeath({
                 if (shizukuServiceHandle === handle) {
-                    clearShizukuService("Shizuku Phone Use service disconnected. Virtual display was reset.")
+                    clearShizukuService(ui(R.string.agent_mode_shizuku_disconnected))
                 }
             }, 0)
         }
@@ -1262,22 +1265,22 @@ class AgentModeController(
         when {
             !settings.agentModeAuthorizationEnabled -> AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.Disabled,
-                detail = "Phone Use authorization is disabled.",
+                detail = ui(R.string.agent_mode_auth_disabled),
             )
 
             !PhoneUseAccessibilityService.connected.value -> AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.AccessibilityMissing,
-                detail = "Enable Aether in Android Accessibility settings.",
+                detail = ui(R.string.agent_mode_enable_accessibility),
             )
 
             settings.phoneUseAuthorizationMethod == AgentModeAuthorizationMethod.Accessibility -> AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.Ready,
-                detail = "Accessibility is connected. Phone Use controls the foreground screen.",
+                detail = ui(R.string.agent_mode_accessibility_ready),
             )
 
             Build.VERSION.SDK_INT < 30 -> AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.Error,
-                detail = "Virtual Display accessibility requires Android 11 or later.",
+                detail = ui(R.string.agent_mode_virtual_requires_android_11),
             )
 
             settings.phoneUseAuthorizationMethod == AgentModeAuthorizationMethod.Root -> inspectRootAuthorization()
@@ -1290,18 +1293,18 @@ class AgentModeController(
         if (existing != null && existing.asBinder().isBinderAlive) {
             return@withContext AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.Ready,
-                detail = "Root Phone Use service is already connected.",
+                detail = ui(R.string.agent_mode_root_already_connected),
             )
         }
         if (existing != null) {
-            clearRootService("Root Phone Use service disconnected. Virtual display was reset.")
+            clearRootService(ui(R.string.agent_mode_root_disconnected))
         }
 
         val suPath = findSuPath()
         if (suPath.isBlank()) {
             return@withContext AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.RootUnavailable,
-                detail = "No su binary was detected on this device.",
+                detail = ui(R.string.root_no_su),
             )
         }
 
@@ -1314,18 +1317,18 @@ class AgentModeController(
 
             probe.exitCode == 0 -> AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.Ready,
-                detail = "Root authorization is granted.",
+                detail = ui(R.string.agent_mode_root_granted),
             )
 
             probe.timedOut -> AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.RootPermissionMissing,
-                detail = "Root authorization timed out. Grant su to Aether, then refresh Phone Use status.",
+                detail = ui(R.string.agent_mode_root_timeout),
             )
 
             else -> AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.RootPermissionDenied,
                 detail = probe.combinedOutput().ifBlank {
-                    "Root authorization was not granted. Grant su to Aether, then refresh Phone Use status."
+                    ui(R.string.agent_mode_root_not_granted)
                 }.take(280),
             )
         }
@@ -1335,32 +1338,32 @@ class AgentModeController(
         if (!isAnyPackageInstalled(ShizukuManagerPackages)) {
             return AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.ShizukuNotInstalled,
-                detail = "Install Shizuku before using Shizuku Phone Use.",
+                detail = ui(R.string.agent_mode_install_shizuku),
             )
         }
         val isRunning = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
         if (!isRunning) {
             return AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.ShizukuNotRunning,
-                detail = "Start Shizuku, then refresh Phone Use status.",
+                detail = ui(R.string.agent_mode_start_shizuku),
             )
         }
         return runCatching {
             if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
                 AgentModeAuthorizationState(
                     issue = AgentModeAuthorizationIssue.Ready,
-                    detail = "Shizuku permission is granted.",
+                    detail = ui(R.string.agent_mode_shizuku_granted),
                 )
             } else {
                 AgentModeAuthorizationState(
                     issue = AgentModeAuthorizationIssue.ShizukuPermissionMissing,
-                    detail = "Grant Aether permission in Shizuku before using Phone Use.",
+                    detail = ui(R.string.agent_mode_grant_shizuku),
                 )
             }
         }.getOrElse { throwable ->
             AgentModeAuthorizationState(
                 issue = AgentModeAuthorizationIssue.Error,
-                detail = throwable.message ?: "Unable to inspect Shizuku permission.",
+                detail = throwable.message ?: ui(R.string.agent_mode_shizuku_inspect_failed),
             )
         }
     }

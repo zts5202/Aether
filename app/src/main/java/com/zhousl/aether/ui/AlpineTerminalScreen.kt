@@ -59,6 +59,8 @@ import com.termux.terminal.TerminalColors
 import com.termux.terminal.TextStyle
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
+import androidx.compose.ui.res.stringResource
+import com.zhousl.aether.R
 import com.zhousl.aether.runtime.AlpineTerminalLaunchSpec
 import com.zhousl.aether.ui.theme.AetherBackground
 import com.zhousl.aether.ui.theme.AetherOnSurface
@@ -75,11 +77,13 @@ fun AlpineTerminalScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val alpineTitle = stringResource(R.string.alpine_title)
+    val unableToStart = stringResource(R.string.terminal_unable_start)
     var launchSpec by remember { mutableStateOf<AlpineTerminalLaunchSpec?>(null) }
     var errorMessage by remember { mutableStateOf("") }
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
     var terminalSession by remember { mutableStateOf<TerminalSession?>(null) }
-    var title by remember { mutableStateOf("Alpine") }
+    var title by remember { mutableStateOf(alpineTitle) }
     var controlDown by remember { mutableStateOf(false) }
     var altDown by remember { mutableStateOf(false) }
     val density = LocalDensity.current
@@ -105,7 +109,7 @@ fun AlpineTerminalScreen(
         val result = createLaunchSpec()
         result.fold(
             onSuccess = { launchSpec = it },
-            onFailure = { errorMessage = it.message ?: "Unable to start Alpine terminal." },
+            onFailure = { errorMessage = it.message ?: unableToStart },
         )
     }
 
@@ -167,7 +171,7 @@ fun AlpineTerminalScreen(
                         val sessionClient = AetherTerminalSessionClient(
                             context = viewContext,
                             invalidateTerminal = { view.onScreenUpdated() },
-                            updateTitle = { newTitle -> title = newTitle.ifBlank { "Alpine" } },
+                            updateTitle = { newTitle -> title = newTitle.ifBlank { alpineTitle } },
                         )
                         val session = TerminalSession(
                             spec.executable,
@@ -236,7 +240,7 @@ private fun TerminalTopBar(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.common_back),
                 tint = AetherOnSurface,
                 modifier = Modifier.padding(2.dp),
             )

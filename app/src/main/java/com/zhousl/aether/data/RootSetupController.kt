@@ -1,6 +1,7 @@
 package com.zhousl.aether.data
 
 import android.content.Context
+import com.zhousl.aether.R
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -35,19 +36,21 @@ data class RootSetupState(
 class RootSetupController(
     private val context: Context,
 ) {
+    private fun ui(resId: Int, vararg args: Any): String = context.getString(resId, *args)
+
     suspend fun inspect(): RootSetupState = withContext(Dispatchers.IO) {
         val suPath = findSuPath()
         if (suPath.isBlank()) {
             RootSetupState(
                 issue = RootSetupIssue.Unavailable,
-                detail = "No su binary was detected on this device.",
+                detail = ui(R.string.root_no_su),
                 rootAvailable = false,
                 lastUpdatedMillis = System.currentTimeMillis(),
             )
         } else {
             RootSetupState(
                 issue = RootSetupIssue.Available,
-                detail = "Root is available for Virtual Display authorization.",
+                detail = ui(R.string.root_available_for_virtual_display),
                 rootAvailable = true,
                 suPath = suPath,
                 lastUpdatedMillis = System.currentTimeMillis(),

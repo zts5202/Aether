@@ -116,14 +116,20 @@ class AppSettingsSerializationTest {
     }
 
     @Test
-    fun russianLanguageSerializationAndTagResolution() {
-        assertEquals(AppLanguage.Russian, appLanguageForTag("ru"))
-        assertEquals(AppLanguage.Russian, appLanguageForTag("ru-RU"))
-        assertEquals(AppLanguage.Russian, AppLanguage.fromStorage("ru"))
+    fun removedLanguagesFallBackWithoutDroppingOtherSettings() {
+        assertEquals(AppLanguage.English, appLanguageForTag("ru"))
+        assertEquals(AppLanguage.English, appLanguageForTag("ru-RU"))
+        assertEquals(AppLanguage.English, appLanguageForTag("fa"))
+        assertEquals(AppLanguage.English, appLanguageForTag("fa-IR"))
+        assertEquals(AppLanguage.English, AppLanguage.fromStorage("ru"))
+        assertEquals(AppLanguage.English, AppLanguage.fromStorage("Persian"))
+        assertEquals(AppLanguage.SimplifiedChinese, AppLanguage.fromStorage("zh-CN"))
 
-        val settings = AppSettings(language = AppLanguage.Russian)
-        val serialized = serializeAppSettings(settings)
-        val parsed = parseAppSettings(serialized)
-        assertEquals(AppLanguage.Russian, parsed.language)
+        val parsed = parseAppSettings(
+            """{"language":"Russian","themeMode":"Dark","apiKey":"kept"}""",
+        )
+        assertEquals(AppLanguage.English, parsed.language)
+        assertEquals(AppThemeMode.Dark, parsed.themeMode)
+        assertEquals("kept", parsed.apiKey)
     }
 }

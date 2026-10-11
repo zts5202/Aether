@@ -3,6 +3,7 @@ package com.zhousl.aether.runtime
 import android.content.Context
 import android.net.TrafficStats
 import android.os.Build
+import com.zhousl.aether.R
 import com.zhousl.aether.data.AetherDiagnosticLogger
 import com.zhousl.aether.data.AlpineEnvironmentVariable
 import com.zhousl.aether.data.LocalRuntimeId
@@ -84,6 +85,8 @@ class AlpineRuntime(
     context: Context,
     private val diagnosticLogger: AetherDiagnosticLogger = AetherDiagnosticLogger.NoOp,
 ) : LocalRuntime {
+    private fun ui(resId: Int, vararg args: Any): String = appContext.getString(resId, *args)
+
     private val appContext = context.applicationContext
     private val runtimeRoot = File(appContext.filesDir, "runtimes/alpine")
     private val stagingRoot = File(runtimeRoot.parentFile, "alpine-installing")
@@ -165,7 +168,7 @@ class AlpineRuntime(
             return@withContext LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.MissingAssets,
-                detail = "Alpine runtime assets are not bundled in this build.",
+                detail = ui(R.string.alpine_assets_missing),
             )
         }
         runCatching {
@@ -174,7 +177,7 @@ class AlpineRuntime(
             onSuccess = {
                 inspectSetup().let { state ->
                     if (state.isReady) {
-                        state.copy(detail = "Alpine runtime is ready.")
+                        state.copy(detail = ui(R.string.alpine_runtime_ready_detail))
                     } else {
                         state
                     }
@@ -184,7 +187,7 @@ class AlpineRuntime(
                 LocalRuntimeSetupState(
                     runtimeId = id,
                     issue = LocalRuntimeIssue.Failed,
-                    detail = throwable.message ?: "Failed to install Alpine runtime.",
+                    detail = throwable.message ?: ui(R.string.alpine_install_failed_detail),
                 )
             },
         )
@@ -211,7 +214,7 @@ class AlpineRuntime(
         LocalRuntimeSetupState(
             runtimeId = id,
             issue = LocalRuntimeIssue.NotInstalled,
-            detail = "Alpine runtime data was reset.",
+            detail = ui(R.string.alpine_data_reset),
         )
     }
 
@@ -407,7 +410,7 @@ class AlpineRuntime(
             return LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.Failed,
-                detail = "Unknown Alpine package profile: $profileId",
+                detail = ui(R.string.alpine_unknown_profile, profileId),
             )
         }
         val setup = inspectSetup()
@@ -417,14 +420,14 @@ class AlpineRuntime(
             return LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.Ready,
-                detail = "Alpine profile $profileId is already installed.",
+                detail = ui(R.string.alpine_profile_already_installed, profileId),
             )
         }
         val command = packageProfileInstallCommand(profileId)
             ?: return LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.Failed,
-                detail = "Unknown Alpine package profile: $profileId",
+                detail = ui(R.string.alpine_unknown_profile, profileId),
             )
         val progressTracker = AlpinePackageInstallProgressTracker()
         onProgress(progressTracker.onOutput("\$ $command\n"))
@@ -450,7 +453,7 @@ class AlpineRuntime(
             LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.Ready,
-                detail = "Installed Alpine profile $profileId.",
+                detail = ui(R.string.alpine_profile_installed, profileId),
             )
         } else {
             LocalRuntimeSetupState(
@@ -475,32 +478,32 @@ class AlpineRuntime(
             !hasBundledRuntimeAssets() -> LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.MissingAssets,
-                detail = "This build does not include Alpine proot/rootfs assets.",
+                detail = ui(R.string.alpine_build_missing_assets),
             )
             !rootfsDir.isDirectory -> LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.NotInstalled,
-                detail = "Alpine rootfs is not installed.",
+                detail = ui(R.string.alpine_rootfs_missing),
             )
             !prootFile.isFile || !loaderFile.isFile || !libTallocFile.isFile -> LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.Failed,
-                detail = "Alpine host runtime is incomplete.",
+                detail = ui(R.string.alpine_host_incomplete),
             )
             !File(AlpineHostLinker).isFile -> LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.Failed,
-                detail = "Android dynamic linker is unavailable: $AlpineHostLinker",
+                detail = ui(R.string.alpine_linker_unavailable, AlpineHostLinker),
             )
             !File(rootfsDir, "bin/sh").existsNoFollow() -> LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.Failed,
-                detail = "Alpine rootfs is incomplete: /bin/sh is missing.",
+                detail = ui(R.string.alpine_rootfs_missing_sh),
             )
             !File(rootfsDir, "etc/alpine-release").existsNoFollow() -> LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.Failed,
-                detail = "Alpine rootfs is incomplete: /etc/alpine-release is missing.",
+                detail = ui(R.string.alpine_rootfs_missing_release),
             )
             else -> LocalRuntimeSetupState(LocalRuntimeId.Alpine, LocalRuntimeIssue.Ready)
         }
@@ -815,7 +818,7 @@ class AlpineRuntime(
     private suspend fun installFromAssets(
         onProgress: (AlpineSetupProgress) -> Unit,
     ) {
-        onProgress(AlpineSetupProgress(output = "Preparing Alpine runtime files...\n"))
+        onProgress(AlpineSetupProgress(output = ui(R.string.setup_preparing_files)))
         stagingRoot.apply {
             deleteRecursively()
             mkdirs()
@@ -827,16 +830,16 @@ class AlpineRuntime(
         File(stagingRoot, "workspace").mkdirs()
         File(stagingRoot, "tmp").mkdirs()
 
-        onProgress(AlpineSetupProgress(output = "Copying proot runtime...\n"))
+        onProgress(AlpineSetupProgress(output = ui(R.string.alpine_copying_proot)))
         copyAsset("$AlpineAssetRoot/proot.bin", File(stagingBin, "proot"), executable = true)
         copyAsset("$AlpineAssetRoot/loader.bin", File(stagingLoader, "loader"), executable = true)
         copyAsset("$AlpineAssetRoot/libtalloc.so.2", File(stagingLib, "libtalloc.so.2"), executable = false)
         val rootfsAsset = AlpineRootfsAssetCandidates.firstOrNull { assetExists(it.path) }
-            ?: error("Alpine rootfs asset is missing.")
+            ?: error(ui(R.string.alpine_rootfs_asset_missing))
         onProgress(
             AlpineSetupProgress(
                 activity = AlpineSetupActivity.Extracting,
-                output = "Extracting ${rootfsAsset.path}...\n",
+                output = ui(R.string.alpine_extracting_asset, rootfsAsset.path),
             )
         )
         appContext.assets.open(rootfsAsset.path).use { stream ->
@@ -858,7 +861,7 @@ class AlpineRuntime(
         installPreinstalledExtensionsSync()
         AlpineDocumentsProvider.notifyRootsChanged(appContext)
         refreshApkRepositoriesForCurrentNetwork(onProgress)
-        onProgress(AlpineSetupProgress(output = "Alpine runtime files are ready.\n"))
+        onProgress(AlpineSetupProgress(output = ui(R.string.alpine_files_ready)))
     }
 
     suspend fun refreshApkRepositoriesForCurrentNetwork(
@@ -911,11 +914,11 @@ class AlpineRuntime(
                 AlpineSetupProgress(
                     output = when (environment) {
                         ApkNetworkEnvironment.China ->
-                            "Using the Tsinghua Alpine mirror with the official CDN as fallback.\n"
+                            ui(R.string.alpine_mirror_china)
                         ApkNetworkEnvironment.International ->
-                            "Using the official Alpine CDN for the current network.\n"
+                            ui(R.string.alpine_mirror_official)
                         ApkNetworkEnvironment.Unknown ->
-                            "Network region detection failed; using official and China Alpine sources.\n"
+                            ui(R.string.alpine_mirror_unknown)
                     },
                 )
             )
@@ -1120,7 +1123,7 @@ class AlpineRuntime(
         LocalRuntimeSetupState(
             runtimeId = id,
             issue = LocalRuntimeIssue.UnsupportedAbi,
-            detail = "Alpine runtime currently supports arm64-v8a devices only. Device ABIs: ${Build.SUPPORTED_ABIS.joinToString()}",
+            detail = ui(R.string.alpine_abi_unsupported, Build.SUPPORTED_ABIS.joinToString()),
         )
 
     private fun ensureWorkspace() {
@@ -1317,7 +1320,7 @@ class AlpineRuntime(
         )
     }
 
-    private class ExtractionProgressReporter(
+    private inner class ExtractionProgressReporter(
         private val onProgress: (AlpineSetupProgress) -> Unit,
     ) {
         private var totalBytes = 0L
@@ -1332,7 +1335,7 @@ class AlpineRuntime(
                 onProgress(
                     AlpineSetupProgress(
                         activity = AlpineSetupActivity.Extracting,
-                        output = "Extracting $path\n",
+                        output = ui(R.string.setup_extracting_entry, path),
                     )
                 )
             }
@@ -1359,7 +1362,7 @@ class AlpineRuntime(
             onProgress(
                 AlpineSetupProgress(
                     activity = AlpineSetupActivity.Extracting,
-                    output = "Finished extracting the Alpine root filesystem ($megabytes MB).\n",
+                    output = ui(R.string.alpine_extract_finished, megabytes),
                 )
             )
         }

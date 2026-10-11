@@ -23,12 +23,10 @@ body:
     id: platform
     attributes:
       label: Target platform / 目标平台
-      description: Select all that apply. / 可多选。
-      multiple: true
+      description: This fork supports Android only. / 本 fork 仅支持 Android。
+      multiple: false
       options:
         - Android
-        - iOS
-        - macOS
     validations:
       required: true
 

@@ -11,7 +11,13 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 
@@ -74,7 +80,7 @@ enum class PhoneUseOutputStrategy(val storageValue: String) {
     }
 }
 
-@Serializable
+@Serializable(with = AppLanguageSerializer::class)
 enum class AppLanguage(
     val storageValue: String,
     val languageTag: String,
@@ -86,22 +92,46 @@ enum class AppLanguage(
     SimplifiedChinese(
         storageValue = "zh-CN",
         languageTag = "zh-CN",
-    ),
-    Persian(
-        storageValue = "fa",
-        languageTag = "fa",
-    ),
-    Russian(
-        storageValue = "ru",
-        languageTag = "ru",
     );
 
     companion object {
         fun fromStorage(
             value: String?,
             defaultValue: AppLanguage = defaultAppLanguage(),
-        ): AppLanguage = entries.firstOrNull { it.storageValue == value } ?: defaultValue
+        ): AppLanguage {
+            val raw = value?.trim().orEmpty()
+            if (raw.isEmpty()) return defaultValue
+            if (isRemovedLanguage(raw)) return English
+            return entries.firstOrNull {
+                it.storageValue.equals(raw, ignoreCase = true) || it.name == raw
+            } ?: defaultValue
+        }
     }
+}
+
+/** Keeps previously stored Russian/Persian choices from failing settings decode. */
+object AppLanguageSerializer : KSerializer<AppLanguage> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("AppLanguage", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: AppLanguage) {
+        encoder.encodeString(value.name)
+    }
+
+    override fun deserialize(decoder: Decoder): AppLanguage =
+        AppLanguage.fromStorage(decoder.decodeString(), AppLanguage.English)
+}
+
+private fun isRemovedLanguage(value: String): Boolean {
+    val tag = value.trim()
+    return tag.equals("ru", ignoreCase = true) ||
+        tag.equals("fa", ignoreCase = true) ||
+        tag.equals("Russian", ignoreCase = true) ||
+        tag.equals("Persian", ignoreCase = true) ||
+        tag.startsWith("ru-", ignoreCase = true) ||
+        tag.startsWith("fa-", ignoreCase = true) ||
+        tag.startsWith("ru_", ignoreCase = true) ||
+        tag.startsWith("fa_", ignoreCase = true)
 }
 
 @Serializable
@@ -284,8 +314,6 @@ fun defaultAppLanguage(): AppLanguage {
 
 fun appLanguageForTag(languageTag: String): AppLanguage = when {
     languageTag.startsWith("zh", ignoreCase = true) -> AppLanguage.SimplifiedChinese
-    languageTag.startsWith("fa", ignoreCase = true) -> AppLanguage.Persian
-    languageTag.startsWith("ru", ignoreCase = true) -> AppLanguage.Russian
     else -> AppLanguage.English
 }
 

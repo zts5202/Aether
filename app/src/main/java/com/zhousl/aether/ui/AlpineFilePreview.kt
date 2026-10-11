@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.zhousl.aether.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
@@ -63,8 +65,10 @@ internal fun openAlpineFileWithOtherApp(context: Context, file: File) {
     val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
     val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    check(intent.resolveActivity(context.packageManager) != null) { "No installed app can open this file." }
-    context.startActivity(Intent.createChooser(intent, "Open with another app"))
+    check(intent.resolveActivity(context.packageManager) != null) {
+        context.getString(R.string.file_preview_no_app)
+    }
+    context.startActivity(Intent.createChooser(intent, context.getString(R.string.file_manager_open_external)))
 }
 
 @Composable
@@ -75,13 +79,13 @@ internal fun AlpineFilePreviewScreen(preview: AlpineFilePreview, onBack: () -> U
     fun openExternally() {
         runCatching {
             openAlpineFileWithOtherApp(context, preview.file)
-        }.onFailure { openError = "No installed app can open this file." }
+        }.onFailure { openError = context.getString(R.string.file_preview_no_app) }
     }
     Scaffold(topBar = {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp)) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.common_back)) }
             Text(preview.name, Modifier.weight(1f).padding(top = 12.dp), maxLines = 1)
-            IconButton(onClick = ::openExternally) { Icon(Icons.AutoMirrored.Rounded.OpenInNew, "Open with another app") }
+            IconButton(onClick = ::openExternally) { Icon(Icons.AutoMirrored.Rounded.OpenInNew, stringResource(R.string.file_manager_open_external)) }
         }
     }) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
@@ -90,15 +94,15 @@ internal fun AlpineFilePreviewScreen(preview: AlpineFilePreview, onBack: () -> U
                 AlpinePreviewKind.Image -> AlpineImagePreview(preview.file)
                 AlpinePreviewKind.Media -> AlpineMediaPreview(preview.file)
                 else -> Column(Modifier.padding(24.dp)) {
-                    Text("Preview unavailable for this format.")
-                    TextButton(onClick = ::openExternally) { Text("Open with another app") }
+                    Text(stringResource(R.string.file_preview_unavailable))
+                    TextButton(onClick = ::openExternally) { Text(stringResource(R.string.file_manager_open_external)) }
                 }
             }
         }
     }
     openError?.let { message ->
         AlertDialog(onDismissRequest = { openError = null }, text = { Text(message) },
-            confirmButton = { TextButton(onClick = { openError = null }) { Text("OK") } })
+            confirmButton = { TextButton(onClick = { openError = null }) { Text(stringResource(R.string.common_ok)) } })
     }
 }
 
@@ -142,8 +146,8 @@ private fun AlpinePdfPreview(file: File) {
                         .onSuccess { bitmap = it }.onFailure { pageError = it.message }
                 }
                 Column {
-                    Text("${index + 1} / ${document.pageCount}", style = MaterialTheme.typography.labelSmall)
-                    bitmap?.let { Image(it.asImageBitmap(), "Page ${index + 1}", Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth) }
+                    Text(stringResource(R.string.file_preview_page, index + 1, document.pageCount), style = MaterialTheme.typography.labelSmall)
+                    bitmap?.let { Image(it.asImageBitmap(), stringResource(R.string.file_preview_page, index + 1, document.pageCount), Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth) }
                         ?: if (pageError != null) Text(pageError.orEmpty()) else CircularProgressIndicator()
                 }
             }
@@ -181,11 +185,11 @@ private fun AlpineImagePreview(file: File) {
                         inSampleSize = 1
                         while (maxOf(bounds.outWidth, bounds.outHeight) / inSampleSize > 4096) inSampleSize *= 2
                     }
-                    val bitmap = BitmapFactory.decodeFile(file.path, options) ?: error("Unsupported image format.")
+                    val bitmap = BitmapFactory.decodeFile(file.path, options) ?: error(context.getString(R.string.file_preview_unsupported_image))
                     android.graphics.drawable.BitmapDrawable(context.resources, bitmap)
                 }
             }
-        }.onSuccess { drawable = it }.onFailure { error = it.message ?: "Unable to decode image." }
+        }.onSuccess { drawable = it }.onFailure { error = it.message ?: context.getString(R.string.file_preview_unable_decode) }
     }
     when {
         error != null -> Text(error.orEmpty(), Modifier.padding(24.dp))

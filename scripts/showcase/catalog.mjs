@@ -211,30 +211,6 @@ for (const lang of ['zh', 'en']) for (const [index, spec] of specs.entries()) {
 }
 fs.mkdirSync(output, { recursive: true });
 fs.writeFileSync(path.join(output, 'catalog.json'), JSON.stringify(sessions));
-const iosSessions = structuredClone(sessions.filter(s => !s.id.includes('-readest-')));
-for (const session of iosSessions.filter(s => s.id.includes('-agentmode-'))) {
-  const zh = session.id.endsWith('-zh');
-  const response = session.messages[1];
-  const answer = zh
-    ? '定位到了：**Alpine 已安装，但 Pi Bridge 的启动握手没有完成。** 所以界面保留着配置记录，Agent 实际还没有可用的工具通道。\n\n我检查了运行环境状态、Node 路径和最近一次启动记录。文件系统可读，Node 可执行；失败发生在 Bridge 启动后等待 ready 的阶段，日志记录了旧进程占用连接的情况。\n\n建议回到 Settings 中的本地运行环境页面，停止并重新启动运行环境，然后重新检查 Pi Core。成功后应同时看到运行环境就绪和 Bridge 已连接。现有聊天、附件和模型配置都可以保留，无需重装应用。\n\niOS 的应用沙箱不提供 Android 式的 root 或 Shizuku 全设备控制。这里的修复目标是恢复 Aether 自己的本地工具执行能力。若重启后仍未连接，可以导出最近一次启动日志继续定位。'
-    : 'I found the issue: **Alpine is installed, but the Pi Bridge startup handshake did not finish.** The saved configuration exists, while the Agent has no ready tool channel.\n\nThe filesystem is readable and Node runs successfully. The failure occurs while waiting for the Bridge ready event; the latest startup log indicates that an older process retained the connection.\n\nOpen the local runtime page in Settings, stop and restart the runtime, and check Pi Core again. A successful result should show both a ready runtime and a connected Bridge. Your chats, attachments, and model configuration can stay in place.\n\niOS does not provide Android-style root or Shizuku control of the whole device. The goal here is to restore Aether’s own local tool execution. If a restart does not reconnect the Bridge, export the latest startup log for a more precise diagnosis.';
-  response.text = answer;
-  response.responseBlocks[2].text = answer;
-  const diagnostics = [
-    tool('aether_settings', {action:'get',keys:['defaultRuntimeId','alpineSetupCompleted']}, '{"defaultRuntimeId":"alpine","alpineSetupCompleted":true}'),
-    tool('aether_runtime', {action:'status'}, '{"alpine":{"installed":true,"ready":true},"piBridge":{"ready":false}}'),
-    bash('node --version','v22.14.0'),
-    bash('command -v python3','/usr/bin/python3'),
-    tool('aether_runtime', {action:'bridge_status'}, '{"phase":"waiting_for_ready","connected":false}'),
-    bash('ps -eo pid,args', 'PID COMMAND\n28 node /opt/aether/bridge.mjs\n41 node /opt/aether/bridge.mjs'),
-    tool('aether_diagnostics',{category:'pi_bridge',limit:30},'Handshake timeout. Previous bridge process still owns connection.'),
-    bash('test -r /opt/aether/bridge.mjs && test -w /workspace && echo ready','ready'),
-  ];
-  response.responseBlocks[1].tools.slice(0,8).forEach((t,i)=>{
-    const d=diagnostics[i]; t.name=d.name; t.summary=d.args.command || d.name; t.argumentsJson=JSON.stringify(d.args,null,2); t.output=d.stdout; t.outputJson=JSON.stringify({stdout:d.stdout,stderr:'',exit_code:0});
-  });
-}
-fs.writeFileSync(path.join(output, 'catalog-ios.json'), JSON.stringify(iosSessions));
 const manifest = specs.map(s => ({ task: s.key, model: 'GPT-6 Astra Light', seconds: s.duration, toolCalls: s.count, androidOnly: !!s.androidOnly }));
 fs.writeFileSync(path.join(here, 'estimates.json'), JSON.stringify({ provenance: 'Fictional offline film fixtures, not measured model benchmarks or executed tasks.', tasks: manifest, websiteFollowups: followups.map(f => ({ seconds: f.duration, toolCalls: f.count })) }, null, 2) + '\n');
 console.log(`Generated ${sessions.length} bilingual sessions; website has ${sessions[0].messages.filter(m => m.fromUser).length} user turns.`);

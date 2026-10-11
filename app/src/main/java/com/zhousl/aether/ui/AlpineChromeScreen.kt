@@ -48,6 +48,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -78,6 +79,8 @@ fun AlpineChromeScreen(
     onShouldShowKeyboard: suspend (Int, Int) -> Result<Boolean>,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val unableToStartChrome = context.getString(R.string.chrome_unable_start)
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -101,7 +104,7 @@ fun AlpineChromeScreen(
                 }
                 .onFailure {
                     viewerReady = false
-                    errorMessage = it.message ?: "Unable to start Chrome."
+                    errorMessage = it.message ?: unableToStartChrome
                 }
             isStarting = false
         }
@@ -146,7 +149,7 @@ fun AlpineChromeScreen(
     LaunchedEffect(Unit) {
         onStart()
             .onSuccess { viewerReady = true }
-            .onFailure { errorMessage = it.message ?: "Unable to start Chrome." }
+            .onFailure { errorMessage = it.message ?: unableToStartChrome }
         isStarting = false
     }
     DisposableEffect(Unit) {

@@ -49,7 +49,7 @@ class SettingsRepositoryPersistenceTest {
             alpineEnvironmentVariables = listOf(AlpineEnvironmentVariable("C", "D")),
             agentModeAuthorizationEnabled = true,
             agentModeAuthorizationMethod = AgentModeAuthorizationMethod.Root,
-            language = AppLanguage.Persian,
+            language = AppLanguage.SimplifiedChinese,
             themeMode = AppThemeMode.Dark,
             defaultChatModelKey = "provider:chat",
             defaultTitleModelKey = "provider:title",

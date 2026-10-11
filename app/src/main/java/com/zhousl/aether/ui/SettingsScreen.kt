@@ -332,16 +332,12 @@ private val StatisticsNeutralChartColor = Color(0xFFDCE4FF)
 private fun settingsLanguageDisplayName(language: AppLanguage): String = when (language) {
     AppLanguage.English -> stringResource(R.string.language_english)
     AppLanguage.SimplifiedChinese -> stringResource(R.string.language_simplified_chinese)
-    AppLanguage.Persian -> stringResource(R.string.language_persian)
-    AppLanguage.Russian -> stringResource(R.string.language_russian)
 }
 
 @Composable
 private fun settingsLanguageSubtitle(language: AppLanguage): String = when (language) {
     AppLanguage.English -> stringResource(R.string.settings_language_english_interface)
     AppLanguage.SimplifiedChinese -> stringResource(R.string.settings_language_simplified_chinese_interface)
-    AppLanguage.Persian -> stringResource(R.string.settings_language_persian_interface)
-    AppLanguage.Russian -> stringResource(R.string.settings_language_russian_interface)
 }
 
 @Composable
@@ -1118,7 +1114,7 @@ fun SettingsScreen(
             )
 
             SettingsPage.Alpine -> AlpineSettingsPage(
-                title = "Alpine",
+                title = stringResource(R.string.alpine_title),
                 setupState = alpineSetupState,
                 packageProfiles = alpinePackageProfiles,
                 installProgress = alpinePackageInstallProgress,
@@ -1392,7 +1388,7 @@ private fun SettingsHub(
                 CardDivider()
                 SettingsNavRow(
                     icon = Icons.Rounded.Code,
-                    title = "Alpine",
+                    title = stringResource(R.string.alpine_title),
                     subtitle = if (alpineReady) { stringResource(R.string.settings_alpine_subtitle_ready) } else { stringResource(R.string.settings_alpine_subtitle_setup) },
                     onClick = { onNavigate(SettingsPage.Alpine) },
                 )
@@ -1408,7 +1404,11 @@ private fun SettingsHub(
                     SettingsNavRow(
                         icon = Icons.Rounded.Check,
                         title = stringResource(R.string.settings_runtime_defaults),
-                        subtitle = defaultRuntimeId?.displayName ?: stringResource(R.string.settings_runtime_defaults_hint),
+                        subtitle = when (defaultRuntimeId) {
+                            LocalRuntimeId.Termux -> stringResource(R.string.settings_termux)
+                            LocalRuntimeId.Alpine -> stringResource(R.string.alpine_title)
+                            null -> stringResource(R.string.settings_runtime_defaults_hint)
+                        },
                         onClick = { onNavigate(SettingsPage.RuntimeDefaults) },
                     )
                 }
@@ -5367,7 +5367,7 @@ private fun AlpineSettingsPage(
         onTrailingAction = onOpenTerminal,
         secondaryTrailingIcon = Icons.Rounded.Folder,
         secondaryTrailingEnabled = setupState.isReady,
-        secondaryTrailingContentDescription = "Open files",
+        secondaryTrailingContentDescription = stringResource(R.string.settings_open_files),
         onSecondaryTrailingAction = onOpenFiles,
         tertiaryTrailingIcon = Icons.Rounded.Public,
         tertiaryTrailingEnabled = packageProfiles["chrome"]?.installed == true,
@@ -5582,7 +5582,7 @@ private fun RuntimeDefaultsPage(
         SettingsCardGroup {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SettingsChoiceRow(
-                    title = "Termux",
+                    title = stringResource(R.string.settings_termux),
                     subtitle = if (termuxReady) {
                         stringResource(R.string.settings_runtime_termux_ready_subtitle)
                     } else {
@@ -5596,7 +5596,7 @@ private fun RuntimeDefaultsPage(
                     },
                 )
                 SettingsChoiceRow(
-                    title = "Alpine",
+                    title = stringResource(R.string.alpine_title),
                     subtitle = if (alpineReady) {
                         stringResource(R.string.settings_runtime_alpine_ready_subtitle)
                     } else {

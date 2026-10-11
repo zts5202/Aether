@@ -315,7 +315,6 @@ fun AetherApp(
     ) {
         AetherTheme(
             themeMode = uiState.settings.themeMode,
-            language = effectiveLanguage,
         ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
@@ -478,10 +477,12 @@ private fun AetherAppContent(
     }
     val selectedSkillIds = activeSession?.selectedSkillIds ?: uiState.draftSelectedSkillIds
     val selectedMcpServerIds = activeSession?.activeMcpServerIds ?: uiState.draftSelectedMcpServerIds
+    val termuxNotReadyDetail = stringResource(R.string.developer_termux_not_ready)
     val effectiveTermuxSetupState = effectiveTermuxSetupState(
         setupState = uiState.termuxSetupState,
         developerOverride = uiState.developerTermuxReadyOverride,
         termuxSetupCompleted = uiState.settings.termuxSetupCompleted,
+        notReadyDetail = termuxNotReadyDetail,
     )
     // Phone Use needs a local runtime only for its workspace and screenshot flow; Termux and Alpine are interchangeable.
     val localRuntimeReadyForAgentMode = effectiveTermuxSetupState.isReady || uiState.alpineSetupState.isReady
@@ -2053,11 +2054,12 @@ private fun effectiveTermuxSetupState(
     setupState: TermuxSetupState,
     developerOverride: Boolean?,
     termuxSetupCompleted: Boolean,
+    notReadyDetail: String,
 ): TermuxSetupState = when (developerOverride) {
     true -> TermuxSetupState(previouslyConfigured = termuxSetupCompleted)
     false -> TermuxSetupState(
         issue = TermuxSetupIssue.DispatchFailed,
-        detail = "Developer override: Termux is treated as not ready.",
+        detail = notReadyDetail,
         previouslyConfigured = termuxSetupCompleted,
     )
     null -> if (termuxSetupCompleted && setupState.issue == TermuxSetupIssue.ExternalAppsDisabled) {
