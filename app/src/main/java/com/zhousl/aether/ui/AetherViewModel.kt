@@ -171,6 +171,9 @@ internal fun mergeImportedPiExtensions(
 class AetherViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
+    private fun ui(resId: Int, vararg args: Any): String =
+        getApplication<Application>().getString(resId, *args)
+
     private val runtime = application.aetherRuntime
     private val diagnosticLogger = runtime.diagnosticLogger
     private val settingsRepository = runtime.settingsRepository
@@ -672,7 +675,7 @@ class AetherViewModel(
                 _uiState.update {
                     it.copy(
                         piCoreSetupState = PiCoreSetupState(
-                            detail = "Initialize Alpine before starting the agent runtime.",
+                            detail = ui(R.string.setup_initialize_alpine_first),
                         )
                     )
                 }
@@ -697,7 +700,7 @@ class AetherViewModel(
                     piCoreSetupState = PiCoreSetupState(
                         isChecking = true,
                         phase = PiCoreSetupPhase.CheckingAlpine,
-                        output = "Starting Alpine setup...\n",
+                        output = ui(R.string.setup_starting_alpine),
                     ),
                 )
             }
@@ -729,7 +732,7 @@ class AetherViewModel(
                             detail = detail,
                             output = appendSetupOutput(
                                 current.piCoreSetupState.output,
-                                "Setup failed: $detail\n",
+                                ui(R.string.setup_failed, detail),
                             ),
                         ),
                     )
@@ -773,7 +776,7 @@ class AetherViewModel(
                 piCoreSetupState = PiCoreSetupState(
                     isChecking = true,
                     phase = PiCoreSetupPhase.CheckingAlpine,
-                    output = "Starting Alpine setup...\n",
+                    output = ui(R.string.setup_starting_alpine),
                 )
             )
         }
@@ -826,13 +829,13 @@ class AetherViewModel(
                         bytesPerSecond = 0L,
                         output = appendSetupOutput(
                             current.piCoreSetupState.output,
-                            "Setup failed: ${setupState.detail}\n",
+                            ui(R.string.setup_failed, setupState.detail),
                         ),
                     )
                 )
             }
         }
-        emitTransientMessage(UiText.Raw(setupState.detail.ifBlank { "Alpine runtime status refreshed." }))
+        emitTransientMessage(UiText.Raw(setupState.detail.ifBlank { ui(R.string.alpine_status_refreshed) }))
     }
 
     private suspend fun refreshPiCoreSetup() {
@@ -842,7 +845,7 @@ class AetherViewModel(
                 piCoreSetupState = PiCoreSetupState(
                     isChecking = true,
                     phase = PiCoreSetupPhase.CheckingAlpine,
-                    output = it.piCoreSetupState.output.ifBlank { "Starting agent runtime setup...\n" },
+                    output = it.piCoreSetupState.output.ifBlank { ui(R.string.setup_starting_agent) },
                 )
             )
         }
@@ -861,7 +864,7 @@ class AetherViewModel(
                             bridgeVersion = payload.optString("bridge_version"),
                             output = appendSetupOutput(
                                 it.piCoreSetupState.output,
-                                "AI engine setup complete.\n",
+                                ui(R.string.setup_engine_complete),
                             ),
                         )
                     )
@@ -878,7 +881,7 @@ class AetherViewModel(
                             detail = throwable.userFacingMessage(),
                             output = appendSetupOutput(
                                 current.piCoreSetupState.output,
-                                "Setup failed: ${throwable.userFacingMessage()}\n",
+                                ui(R.string.setup_failed, throwable.userFacingMessage()),
                             ),
                         )
                     )
@@ -1010,7 +1013,7 @@ class AetherViewModel(
                     profileId = profileId,
                     installed = false,
                     installedAtMillis = 0L,
-                    lastError = installState.detail.ifBlank { "Install failed." },
+                    lastError = installState.detail.ifBlank { ui(R.string.alpine_install_failed) },
                 )
             }
             val settings = _uiState.value.settings
@@ -1023,7 +1026,7 @@ class AetherViewModel(
                 runtime.alpineRuntime.inspectSetup()
             }
             _uiState.update { current -> current.copy(alpineSetupState = runtimeState) }
-            emitTransientMessage(UiText.Raw(installState.detail.ifBlank { "Alpine package profile updated." }))
+            emitTransientMessage(UiText.Raw(installState.detail.ifBlank { ui(R.string.alpine_profile_updated) }))
         }
     }
 
@@ -1324,13 +1327,13 @@ class AetherViewModel(
                 }
             }
 
-            update(PiCoreSetupPhase.CheckingAlpine, output = "Starting Alpine setup preview...\n")
+            update(PiCoreSetupPhase.CheckingAlpine, output = ui(R.string.setup_starting_preview))
             delay(700L)
             update(
                 phase = PiCoreSetupPhase.CheckingAlpine,
                 activity = PiCoreSetupActivity.Extracting,
                 bytesPerSecond = 18L * 1024L * 1024L,
-                output = "Preparing Alpine runtime files...\n",
+                output = ui(R.string.setup_preparing_files),
             )
             delay(900L)
             val extractionEntries = listOf(
@@ -1345,13 +1348,13 @@ class AetherViewModel(
                     phase = PiCoreSetupPhase.CheckingAlpine,
                     activity = PiCoreSetupActivity.Extracting,
                     bytesPerSecond = (18L + index * 3L) * 1024L * 1024L,
-                    output = "Extracting $path\n",
+                    output = ui(R.string.setup_extracting_entry, path),
                 )
                 delay(1_600L)
             }
             update(
                 phase = PiCoreSetupPhase.CheckingNode,
-                output = "Alpine root filesystem ready.\nChecking node --version...\n",
+                output = ui(R.string.setup_rootfs_ready_checking_node),
             )
             delay(1_000L)
             val apkLines = listOf(
@@ -1372,13 +1375,13 @@ class AetherViewModel(
                 )
                 delay(1_400L)
             }
-            update(PiCoreSetupPhase.PreparingBridge, output = "Preparing the AI engine bridge...\n")
+            update(PiCoreSetupPhase.PreparingBridge, output = ui(R.string.setup_preparing_bridge))
             delay(900L)
-            update(PiCoreSetupPhase.StartingBridge, output = "Starting node bridge.mjs...\n")
+            update(PiCoreSetupPhase.StartingBridge, output = ui(R.string.setup_starting_bridge))
             delay(900L)
-            update(PiCoreSetupPhase.VerifyingBridge, output = "Verifying bridge response...\n")
+            update(PiCoreSetupPhase.VerifyingBridge, output = ui(R.string.setup_verifying_bridge))
             delay(900L)
-            update(PiCoreSetupPhase.Ready, output = "AI engine setup complete.\n")
+            update(PiCoreSetupPhase.Ready, output = ui(R.string.setup_engine_complete))
         }
     }
 
@@ -4170,7 +4173,7 @@ class AetherViewModel(
                     val newSession = createSession(
                         id = targetSessionId,
                         messages = listOf(userMessage),
-                        title = "New chat",
+                        title = ui(R.string.common_new_chat),
                         hasCustomTitle = true,
                         selectedModelKey = current.draftSelectedModelKey.ifBlank {
                             resolveDefaultChatModelKey(current.settings, current.providerConfigs)
@@ -4402,7 +4405,7 @@ class AetherViewModel(
                             workspaceState = AttachmentWorkspaceState.Failed,
                             workspaceError = throwable.message
                                 .orEmpty()
-                                .ifBlank { "Couldn't copy this attachment into the workspace." },
+                                .ifBlank { ui(R.string.attachment_copy_failed) },
                             workspaceBytesPerSecond = 0L,
                         )
                     }
@@ -4430,7 +4433,7 @@ class AetherViewModel(
                     if (read <= 0) break
                     total += read
                 }
-                require(total <= MaxInlineImageAttachmentBytes) { "Image is too large to inline." }
+                require(total <= MaxInlineImageAttachmentBytes) { ui(R.string.attachment_image_too_large) }
                 buffer.copyOf(total)
             } ?: return ""
             Base64.getEncoder().encodeToString(bytes)
@@ -4451,7 +4454,7 @@ class AetherViewModel(
     } else {
         attachment.copy(
             workspaceState = AttachmentWorkspaceState.Failed,
-            workspaceError = "This attachment is missing its workspace copy. Re-upload it before sending.",
+            workspaceError = ui(R.string.attachment_missing_workspace),
         )
     }
 
@@ -5189,14 +5192,14 @@ class AetherViewModel(
             .firstOrNull { it.author == MessageAuthor.User && it.displayKind == MessageDisplayKind.Standard }
             ?.summaryText()
             .orEmpty()
-            .ifBlank { "New chat" }
+            .ifBlank { ui(R.string.common_new_chat) }
             .take(36)
 
         val preview = visibleMessages
             .lastOrNull()
             ?.summaryText()
             .orEmpty()
-            .ifBlank { "No messages yet." }
+            .ifBlank { ui(R.string.chat_no_messages_yet) }
             .take(96)
 
         return SessionMetadata(title = title, preview = preview)

@@ -56,6 +56,7 @@ class AetherApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.zhousl.aether.phoneuse.PhoneUseAccessibilityService.attachApplication(this)
         runtime.initialize()
     }
 

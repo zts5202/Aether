@@ -8,6 +8,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.zhousl.aether.BuildConfig
+import com.zhousl.aether.R
 import com.zhousl.aether.data.AetherDiagnosticLogger
 import com.zhousl.aether.data.DefaultOldCommandHistoryRetentionHours
 import com.zhousl.aether.data.MaxOldCommandHistoryRetentionHours
@@ -67,6 +68,8 @@ class TermuxBashTool(
     private val context: Context,
     private val diagnosticLogger: AetherDiagnosticLogger = AetherDiagnosticLogger.NoOp,
 ) {
+    private fun ui(resId: Int, vararg args: Any): String = context.getString(resId, *args)
+
     private val environmentVariables = AtomicReference<List<TermuxEnvironmentVariable>>(emptyList())
     private val autoCleanOldCommandHistory = AtomicReference(true)
     private val oldCommandHistoryRetentionHours = AtomicInteger(DefaultOldCommandHistoryRetentionHours)
@@ -99,14 +102,14 @@ class TermuxBashTool(
         if (!isTermuxInstalled()) {
             return@withContext TermuxSetupState(
                 issue = TermuxSetupIssue.NotInstalled,
-                detail = "Install Termux before using bash tools.",
+                detail = ui(R.string.termux_install_before_bash),
             )
         }
 
         if (!hasRunCommandPermission()) {
             return@withContext TermuxSetupState(
                 issue = TermuxSetupIssue.PermissionMissing,
-                detail = "Grant 'Run commands in Termux environment' to Aether.",
+                detail = ui(R.string.termux_grant_run_command),
             )
         }
 
@@ -118,7 +121,7 @@ class TermuxBashTool(
         val json = runCatching { JSONObject(probeResult) }.getOrNull()
             ?: return@withContext TermuxSetupState(
                 issue = TermuxSetupIssue.DispatchFailed,
-                detail = "Termux returned an unreadable setup probe result.",
+                detail = ui(R.string.termux_unreadable_probe),
             )
 
         when {
@@ -132,7 +135,7 @@ class TermuxBashTool(
                 json.optString("errmsg").contains("rejected", ignoreCase = true) -> {
                 TermuxSetupState(
                     issue = TermuxSetupIssue.ExternalAppsDisabled,
-                    detail = "In Termux, paste the setup command to enable allow-external-apps, then return to Aether.",
+                    detail = ui(R.string.termux_paste_setup_command),
                 )
             }
 
@@ -140,7 +143,7 @@ class TermuxBashTool(
                 TermuxSetupState(
                     issue = TermuxSetupIssue.DispatchFailed,
                     detail = json.optString("errmsg").ifBlank {
-                        json.optString("hint").ifBlank { "Termux did not accept the setup probe." }
+                        json.optString("hint").ifBlank { ui(R.string.termux_probe_rejected) }
                     },
                 )
             }
@@ -173,7 +176,7 @@ class TermuxBashTool(
                 workingDirectory = workingDirectory,
                 runId = runId,
                 message = raw.optString("errmsg").ifBlank {
-                    "Couldn't prepare the workspace directory before running the bash command."
+                    ui(R.string.termux_prepare_workspace_failed)
                 },
                 hint = raw.optString("hint"),
                 stdout = raw.optString("stdout"),
@@ -394,7 +397,7 @@ class TermuxBashTool(
                 command = command,
                 workingDirectory = normalizedWorkingDirectory,
                 message = raw.optString("errmsg").ifBlank {
-                    "Couldn't prepare the workspace directory before running the command."
+                    ui(R.string.termux_prepare_workspace_failed)
                 },
                 hint = raw.optString("hint"),
             )
@@ -428,7 +431,7 @@ class TermuxBashTool(
                 command = commandFallback,
                 workingDirectory = workingDirectoryFallback,
                 runId = runIdFallback,
-                message = "Termux returned unreadable command output.",
+                message = ui(R.string.termux_unreadable_output),
             )
 
         if (!raw.optBoolean("ok")) {
@@ -449,7 +452,7 @@ class TermuxBashTool(
                 command = commandFallback,
                 workingDirectory = workingDirectoryFallback,
                 runId = runIdFallback,
-                message = "Termux returned an unreadable managed command payload.",
+                message = ui(R.string.termux_unreadable_payload),
                 stdout = raw.optString("stdout"),
                 stderr = raw.optString("stderr"),
             )
@@ -578,8 +581,8 @@ class TermuxBashTool(
             return buildSetupErrorResult(
                 command = command,
                 workingDirectory = workingDirectory,
-                message = "Termux is not installed.",
-                hint = "Install the Termux app (package com.termux) first.",
+                message = ui(R.string.termux_not_installed_message),
+                hint = ui(R.string.termux_install_app_first),
             )
         }
 
@@ -587,8 +590,8 @@ class TermuxBashTool(
             return buildSetupErrorResult(
                 command = command,
                 workingDirectory = workingDirectory,
-                message = "Aether does not have Termux RUN_COMMAND permission.",
-                hint = "Grant 'Run commands in Termux environment' to Aether in Android Settings.",
+                message = ui(R.string.termux_missing_permission_message),
+                hint = ui(R.string.termux_grant_in_settings),
             )
         }
 
@@ -654,8 +657,8 @@ class TermuxBashTool(
                 buildSetupErrorResult(
                     command = command,
                     workingDirectory = workingDirectory,
-                    message = "Termux rejected the RUN_COMMAND request.",
-                    hint = "Paste the Aether Termux setup command inside Termux to enable allow-external-apps.",
+                    message = ui(R.string.termux_rejected_run_command),
+                    hint = ui(R.string.termux_paste_allow_external),
                 )
             } else {
                 val result = if (awaitTimeoutMillis == null) {
@@ -671,8 +674,8 @@ class TermuxBashTool(
                             return buildSetupErrorResult(
                                 command = command,
                                 workingDirectory = workingDirectory,
-                                message = "Timed out waiting for Termux to reply.",
-                                hint = "Open Termux once, paste the Aether Termux setup command, then refresh.",
+                                message = ui(R.string.termux_timeout),
+                                hint = ui(R.string.termux_open_and_paste),
                             )
                         }
                 }
@@ -705,7 +708,7 @@ class TermuxBashTool(
                 command = command,
                 workingDirectory = workingDirectory,
                 message = throwable.message ?: "Failed to dispatch command to Termux.",
-                hint = "Check Termux permission, allow-external-apps, and battery restrictions.",
+                hint = ui(R.string.termux_check_restrictions),
             )
         }
     }

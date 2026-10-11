@@ -1,6 +1,6 @@
-# Phone Use
+# 手机操控
 
-Phone Use is Android device control through a user-enabled Accessibility service. The default mode operates the foreground screen without Root or Shizuku. The default input strategy returns element trees from `start`/`observe` and after actions. Screenshot-first instead returns images. The default output strategy prefers element operations; coordinate gestures can be selected instead. Foreground control has no live-preview or replay card.
+This fork is Android-only. 手机操控 is device control through a user-enabled Accessibility service. The default mode operates the foreground screen without Root or Shizuku. The default input strategy returns element trees from `start`/`observe` and after actions. Screenshot-first instead returns images. The default output strategy prefers element operations; coordinate gestures can be selected instead. Foreground control has no live-preview or replay card.
 
 Virtual Display is an optional background mode. Root or Shizuku creates and launches apps on the display; `PhoneUseAccessibilityService` reads and operates its windows using the display ID. The existing card streams the display surface. The privileged Binder service provides display lifecycle and app discovery/launch only, with no input injection or shell-command interface. Its off-screen ImageReader is drained when a preview is absent so rendering continues.
 
@@ -16,9 +16,7 @@ Foreground element actions and gestures work from the existing minimum Android v
 
 Phone Use tasks keep the existing task notification/foreground service active while running, including when the general background preference is off, because launching a controlled app puts Aether in the background. Ordinary chats continue to respect that preference.
 
-A one-time upgrade migration enables foreground Phone Use and disables Virtual Display. Subsequent explicit off choices persist. Existing selected Root/Shizuku providers are remembered for the secondary authorization page, and saved chat tool selections/imports remain compatible. Storage field names and the host tool identifiers `agent_display` and `aether_agent_mode_manage` remain compatible with old chats and extensions.
-
-iOS keeps device control unavailable: its public accessibility APIs do not let third-party apps read or operate other apps. Shared labels use Phone Use, and the native iOS settings/composer continue to omit this unsupported capability.
+A one-time upgrade migration enables foreground 手机操控 and disables Virtual Display. Subsequent explicit off choices persist. Existing selected Root/Shizuku providers are remembered for the secondary authorization page, and saved chat tool selections/imports remain compatible. Storage field names and the host tool identifiers `agent_display` and `aether_agent_mode_manage` remain compatible with old chats and extensions.
 
 ## Foreground feedback and Steer (Android only)
 
@@ -41,7 +39,7 @@ Observations are bounded to 1,200 nodes and 48 levels. An explicit new observati
 
 ## Virtual Display orientation and fullscreen preview
 
-Android Virtual Display supports **Device default**, **Portrait**, and **Landscape** in Settings → Phone Use when Virtual Display is enabled. Device default preserves the physical display dimensions; portrait/landscape order the short/long edges. Changing the saved choice stops the managed display; relaunch the app afterwards. Foreground Accessibility uses the actual screen geometry and does not need this setting. iOS has no Android Virtual Display implementation; shared settings and data archives preserve the preference.
+虚拟屏幕 supports **Device default**, **Portrait**, and **Landscape** in Settings → 手机操控 when 虚拟屏幕 is enabled. Device default preserves the physical display dimensions; portrait/landscape order the short/long edges. Changing the saved choice stops the managed display; relaunch the app afterwards. Foreground Accessibility uses the actual screen geometry and does not need this setting.
 
 `agent_display` accepts a session-only `orientation` (`device`, `portrait`, `landscape`) on `start`/`launch` in Virtual Display mode:
 

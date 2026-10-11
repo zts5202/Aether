@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import com.zhousl.aether.AetherApplication
+import com.zhousl.aether.R
 import com.zhousl.aether.MainActivity
 import android.content.ComponentName
 import android.content.Context
@@ -653,11 +654,20 @@ class PhoneUseAccessibilityService : AccessibilityService() {
 
     companion object {
         @Volatile private var instance: PhoneUseAccessibilityService? = null
+        @Volatile private var applicationContext: Context? = null
+
+        fun attachApplication(context: Context) {
+            applicationContext = context.applicationContext
+        }
         private val _connected = MutableStateFlow(false)
         @Volatile private var requestedOverlayState: PhoneUseOverlayState? = null
         val connected = _connected.asStateFlow()
         fun requireConnected(): PhoneUseAccessibilityService = instance
-            ?: error("Enable Aether in Android Accessibility settings, then return to Aether.")
+            ?: error(
+                (instance?.applicationContext ?: applicationContext)
+                    ?.getString(R.string.agent_mode_enable_accessibility_return)
+                    ?: "Enable Aether in Android Accessibility settings, then return to Aether.",
+            )
         fun openSettings(context: Context) {
             context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }

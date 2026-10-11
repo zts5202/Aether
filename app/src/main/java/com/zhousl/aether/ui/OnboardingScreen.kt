@@ -880,7 +880,7 @@ private fun AlpineRuntimeStep(
                     LocalRuntimeIssue.Failed -> TourGold
                     else -> TourBlue
                 },
-                title = "Alpine",
+                title = stringResource(R.string.alpine_title),
                 body = alpineTourStatusText(setupState),
             )
             if (!setupState.isReady && setupState.detail.isNotBlank()) {

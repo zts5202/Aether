@@ -1,5 +1,7 @@
 # Aether 迁移到 Codex app-server：源码研究与实施评估
 
+> 本 fork 仅支持 Android，已移除 iOS 工程与 iSH。下文里的 iOS、iSH、macOS 与 App Store 描述是 2026-10-09 的历史研究记录，不代表当前产品范围。当前构建不发布 `.ipa`。
+
 研究日期：2026-10-09。本文分析迁移工作，不实施内核替换。
 
 ## 1. 结论与研究边界

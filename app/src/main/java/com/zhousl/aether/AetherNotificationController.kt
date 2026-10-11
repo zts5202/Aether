@@ -30,18 +30,18 @@ class AetherNotificationController(
         val manager = context.getSystemService(NotificationManager::class.java)
         val foregroundChannel = NotificationChannel(
             ForegroundChannelId,
-            "Background tasks",
+            context.getString(R.string.notification_channel_background),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Shows active Aether sessions running in the background."
+            description = context.getString(R.string.notification_channel_background_description)
             setShowBadge(false)
         }
         val completionChannel = NotificationChannel(
             CompletionChannelId,
-            "Task completion",
+            context.getString(R.string.notification_channel_completion),
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
-            description = "Alerts you when a background Aether session finishes."
+            description = context.getString(R.string.notification_channel_completion_description)
         }
         manager.createNotificationChannel(foregroundChannel)
         manager.createNotificationChannel(completionChannel)
@@ -52,15 +52,16 @@ class AetherNotificationController(
         executionStates: Map<String, SessionExecutionState>,
     ): Notification {
         val activeSessions = sessions.filter { executionStates[it.id]?.isRunning == true }
+        val untitled = context.getString(R.string.notification_untitled_chat)
         val title = if (activeSessions.size == 1) {
-            "Aether is running 1 task"
+            context.getString(R.string.notification_running_one)
         } else {
-            "Aether is running ${activeSessions.size} tasks"
+            context.getString(R.string.notification_running_many, activeSessions.size)
         }
         val body = activeSessions
             .take(3)
-            .joinToString(separator = ", ") { it.title.ifBlank { "Untitled chat" } }
-            .ifBlank { "Keeping active sessions alive in the background." }
+            .joinToString(separator = ", ") { it.title.ifBlank { untitled } }
+            .ifBlank { context.getString(R.string.notification_keeping_alive) }
 
         val contentIntent = PendingIntent.getActivity(
             context,
@@ -79,7 +80,7 @@ class AetherNotificationController(
                 NotificationCompat.BigTextStyle()
                     .bigText(
                         activeSessions.joinToString(separator = "\n") { session ->
-                            "- ${session.title.ifBlank { "Untitled chat" }}"
+                            "- ${session.title.ifBlank { untitled }}"
                         }.ifBlank { body }
                     )
             )
@@ -107,20 +108,21 @@ class AetherNotificationController(
             PendingIntent.FLAG_UPDATE_CURRENT or pendingIntentMutabilityFlags(),
         )
 
+        val untitled = context.getString(R.string.notification_untitled_chat)
         val title = if (failed) {
-            "Aether task finished with an issue"
+            context.getString(R.string.notification_finished_issue)
         } else {
-            "Aether task finished"
+            context.getString(R.string.notification_finished)
         }
 
         val notification = NotificationCompat.Builder(context, CompletionChannelId)
             .setSmallIcon(R.drawable.ic_notification_small)
             .setContentTitle(title)
-            .setContentText(sessionTitle.ifBlank { "Untitled chat" })
+            .setContentText(sessionTitle.ifBlank { untitled })
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
                     buildString {
-                        append(sessionTitle.ifBlank { "Untitled chat" })
+                        append(sessionTitle.ifBlank { untitled })
                         if (summary.isNotBlank()) {
                             append("\n")
                             append(summary)

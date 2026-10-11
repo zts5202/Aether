@@ -74,6 +74,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.zhousl.aether.R
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -100,6 +102,12 @@ internal fun AndroidAlpineFileManagerScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    fun s(id: Int, vararg args: Any): String = context.getString(id, *args)
+    fun sortLabel(option: AndroidFileSort): String = when (option) {
+        AndroidFileSort.Name -> s(R.string.file_manager_sort_name)
+        AndroidFileSort.Date -> s(R.string.file_manager_sort_date)
+        AndroidFileSort.Size -> s(R.string.file_manager_sort_size)
+    }
     val scope = rememberCoroutineScope()
     var path by remember { mutableStateOf("/") }
     var entries by remember { mutableStateOf<List<AndroidAlpineFileEntry>>(emptyList()) }
@@ -125,7 +133,7 @@ internal fun AndroidAlpineFileManagerScreen(
         scope.launch {
             runCatching { runtime.listDirectory(requestedPath) }
                 .onSuccess { if (path == requestedPath) entries = it }
-                .onFailure { error = it.message ?: "Unable to load directory." }
+                .onFailure { error = it.message ?: s(R.string.file_manager_unable_load) }
             if (path == requestedPath) loading = false
         }
     }
@@ -146,10 +154,10 @@ internal fun AndroidAlpineFileManagerScreen(
                         DocumentFile.fromTreeUri(context, uri)
                     } else {
                         DocumentFile.fromSingleUri(context, uri)
-                    } ?: error("Unable to open the selected item.")
+                    } ?: error(s(R.string.file_manager_unable_open_item))
                     importAndroidDocument(context, runtime, path, document)
                 }
-            }.onFailure { error = it.message ?: "Unable to import the selected item." }
+            }.onFailure { error = it.message ?: s(R.string.file_manager_unable_import) }
             refresh()
         }
     }
@@ -172,11 +180,11 @@ internal fun AndroidAlpineFileManagerScreen(
                     loading = true
                     runCatching {
                         val output = context.contentResolver.openOutputStream(uri, "w")
-                            ?: error("Unable to open the selected download location.")
+                            ?: error(s(R.string.file_manager_unable_download_location))
                         output.use { runtime.exportFile(entry.path, it) }
                     }.onFailure { failure ->
                         runCatching { context.contentResolver.delete(uri, null, null) }
-                        error = failure.message ?: "Unable to download the file."
+                        error = failure.message ?: s(R.string.file_manager_unable_download)
                     }
                     loading = false
                 }
@@ -204,12 +212,12 @@ internal fun AndroidAlpineFileManagerScreen(
                     editorContent = text
                     editorFile = entry
                 } else {
-                    require(entry.size <= 128L * 1024 * 1024) { "File is too large to preview (maximum 128 MB)." }
+                    require(entry.size <= 128L * 1024 * 1024) { s(R.string.file_manager_too_large) }
                     val directory = java.io.File(context.cacheDir, "assistant-local-open/alpine-preview-${java.util.UUID.randomUUID()}")
                     val file = java.io.File(directory, entry.name)
                     try {
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            check(directory.mkdirs()) { "Unable to prepare preview." }
+                            check(directory.mkdirs()) { s(R.string.file_manager_unable_preview) }
                             file.outputStream().use { runtime.exportFile(entry.path, it) }
                         }
                         filePreview = AlpineFilePreview(entry.name, file, if (kind == AlpinePreviewKind.Text) AlpinePreviewKind.External else kind)
@@ -218,7 +226,7 @@ internal fun AndroidAlpineFileManagerScreen(
                         throw failure
                     }
                 }
-            }.onFailure { error = it.message ?: "Unable to open file." }
+            }.onFailure { error = it.message ?: s(R.string.file_manager_unable_open) }
             loading = false
         }
     }
@@ -256,7 +264,7 @@ internal fun AndroidAlpineFileManagerScreen(
                 val target = editorFile ?: return@SoraEditorScreen
                 scope.launch {
                     runCatching { runtime.fileSystem.write(target.path, content.encodeToByteArray()) }
-                        .onFailure { error = it.message ?: "Unable to save file." }
+                        .onFailure { error = it.message ?: s(R.string.file_manager_unable_save) }
                 }
             },
             onBack = { editorFile = null },
@@ -285,10 +293,10 @@ internal fun AndroidAlpineFileManagerScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, s(R.string.common_back))
                     }
                     Column(Modifier.weight(1f)) {
-                        Text("Alpine Files", style = MaterialTheme.typography.titleMedium, color = AetherOnSurface)
+                        Text(s(R.string.alpine_files_title), style = MaterialTheme.typography.titleMedium, color = AetherOnSurface)
                         Text(path, style = MaterialTheme.typography.labelSmall, color = AetherOnSurfaceVariant, maxLines = 1)
                     }
                     IconButton(
@@ -296,30 +304,30 @@ internal fun AndroidAlpineFileManagerScreen(
                             if (path != "/") path = path.substringBeforeLast('/', "").ifBlank { "/" }
                         },
                         enabled = path != "/",
-                    ) { Icon(Icons.Rounded.ArrowUpward, "Parent folder") }
+                    ) { Icon(Icons.Rounded.ArrowUpward, s(R.string.file_manager_parent)) }
                     IconButton(onClick = { showSearch = !showSearch; if (!showSearch) query = "" }) {
-                        Icon(if (showSearch) Icons.Rounded.Close else Icons.Rounded.Search, "Search")
+                        Icon(if (showSearch) Icons.Rounded.Close else Icons.Rounded.Search, if (showSearch) s(R.string.common_close) else s(R.string.common_search))
                     }
                     if (loading) {
                         Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         }
                     } else {
-                        IconButton(onClick = ::refresh) { Icon(Icons.Rounded.Refresh, "Refresh") }
+                        IconButton(onClick = ::refresh) { Icon(Icons.Rounded.Refresh, s(R.string.common_refresh)) }
                     }
                     Box {
                         IconButton(onClick = { optionsExpanded = true }) {
-                            Icon(Icons.Rounded.MoreVert, "View options")
+                            Icon(Icons.Rounded.MoreVert, s(R.string.file_manager_view_options))
                         }
                         DropdownMenu(expanded = optionsExpanded, onDismissRequest = { optionsExpanded = false }) {
                             DropdownMenuItem(
-                                text = { Text(if (grid) "List view" else "Grid view") },
+                                text = { Text(if (grid) s(R.string.file_manager_view_list) else s(R.string.file_manager_view_grid)) },
                                 onClick = { grid = !grid; optionsExpanded = false },
                                 leadingIcon = { Icon(if (grid) Icons.Rounded.ViewList else Icons.Rounded.GridView, null) },
                             )
                             AndroidFileSort.entries.forEach { option ->
                                 DropdownMenuItem(
-                                    text = { Text("Sort by ${option.name.lowercase()}") },
+                                    text = { Text(sortLabel(option)) },
                                     onClick = { sort = option; optionsExpanded = false },
                                     leadingIcon = { Icon(Icons.Rounded.Sort, null) },
                                 )
@@ -332,7 +340,7 @@ internal fun AndroidAlpineFileManagerScreen(
                         value = query,
                         onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                        placeholder = { Text("Search this folder") },
+                        placeholder = { Text(s(R.string.file_manager_search_folder)) },
                         singleLine = true,
                     )
                 }
@@ -341,26 +349,26 @@ internal fun AndroidAlpineFileManagerScreen(
         floatingActionButton = {
             Box {
                 FloatingActionButton(onClick = { createExpanded = true }, containerColor = AetherPrimary) {
-                    Icon(Icons.Rounded.Add, "Create", tint = Color.White)
+                    Icon(Icons.Rounded.Add, s(R.string.file_manager_create), tint = Color.White)
                 }
                 DropdownMenu(expanded = createExpanded, onDismissRequest = { createExpanded = false }) {
                     DropdownMenuItem(
-                        text = { Text("New file") },
+                        text = { Text(s(R.string.file_manager_create_file)) },
                         onClick = { draftName = ""; dialog = AndroidFileDialog.NewFile; createExpanded = false },
                         leadingIcon = { Icon(Icons.Rounded.Description, null) },
                     )
                     DropdownMenuItem(
-                        text = { Text("New folder") },
+                        text = { Text(s(R.string.file_manager_create_folder)) },
                         onClick = { draftName = ""; dialog = AndroidFileDialog.NewFolder; createExpanded = false },
                         leadingIcon = { Icon(Icons.Rounded.CreateNewFolder, null) },
                     )
                     DropdownMenuItem(
-                        text = { Text("Import files") },
+                        text = { Text(s(R.string.file_manager_import_files)) },
                         onClick = { createExpanded = false; fileImportLauncher.launch(arrayOf("*/*")) },
                         leadingIcon = { Icon(Icons.Rounded.FileUpload, null) },
                     )
                     DropdownMenuItem(
-                        text = { Text("Import folder") },
+                        text = { Text(s(R.string.file_manager_import_folder)) },
                         onClick = { createExpanded = false; folderImportLauncher.launch(null) },
                         leadingIcon = { Icon(Icons.Rounded.DriveFolderUpload, null) },
                     )
@@ -374,7 +382,7 @@ internal fun AndroidAlpineFileManagerScreen(
         ) {
             when {
                 loading && entries.isEmpty() -> CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                visibleEntries.isEmpty() -> Text(if (query.isBlank()) "This folder is empty" else "No matching files", color = AetherOnSurfaceVariant)
+                visibleEntries.isEmpty() -> Text(if (query.isBlank()) s(R.string.file_manager_empty) else s(R.string.file_manager_no_matches), color = AetherOnSurfaceVariant)
                 grid -> LazyVerticalGrid(
                     columns = GridCells.Adaptive(140.dp),
                     modifier = Modifier.fillMaxSize().padding(8.dp),
@@ -400,13 +408,13 @@ internal fun AndroidAlpineFileManagerScreen(
                 Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                     Text(entry.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
                     DropdownMenuItem(
-                        text = { Text("Open") },
+                        text = { Text(s(R.string.file_manager_open)) },
                         onClick = { open(entry) },
                         leadingIcon = { Icon(if (entry.isDirectory) Icons.Rounded.Folder else Icons.Rounded.Description, null) },
                     )
                     if (!entry.isDirectory) {
                         DropdownMenuItem(
-                            text = { Text("Open with another app") },
+                            text = { Text(s(R.string.file_manager_open_external)) },
                             onClick = {
                                 selected = null
                                 scope.launch {
@@ -418,13 +426,13 @@ internal fun AndroidAlpineFileManagerScreen(
                                             directory.parentFile?.listFiles()?.filter {
                                                 it.name.startsWith("alpine-open-") && System.currentTimeMillis() - it.lastModified() > 86_400_000
                                             }?.forEach { it.deleteRecursively() }
-                                            check(directory.mkdirs()) { "Unable to prepare file." }
+                                            check(directory.mkdirs()) { s(R.string.file_manager_unable_prepare) }
                                             file.outputStream().use { runtime.exportFile(entry.path, it) }
                                         }
                                         openAlpineFileWithOtherApp(context, file)
                                     }.onFailure {
                                         directory.deleteRecursively()
-                                        error = it.message ?: "Unable to open file."
+                                        error = it.message ?: s(R.string.file_manager_unable_open)
                                     }
                                     loading = false
                                 }
@@ -433,13 +441,13 @@ internal fun AndroidAlpineFileManagerScreen(
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text("Rename") },
+                        text = { Text(s(R.string.file_manager_rename)) },
                         onClick = { draftName = entry.name; dialog = AndroidFileDialog.Rename },
                         leadingIcon = { Icon(Icons.Rounded.Edit, null) },
                     )
                     if (!entry.isDirectory) {
                         DropdownMenuItem(
-                            text = { Text("Download") },
+                            text = { Text(s(R.string.file_manager_download)) },
                             onClick = {
                                 pendingDownload = entry
                                 selected = null
@@ -449,7 +457,7 @@ internal fun AndroidAlpineFileManagerScreen(
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                        text = { Text(s(R.string.file_manager_delete), color = MaterialTheme.colorScheme.error) },
                         onClick = { dialog = AndroidFileDialog.Delete },
                         leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
                     )
@@ -463,18 +471,18 @@ internal fun AndroidAlpineFileManagerScreen(
             onDismissRequest = { dialog = AndroidFileDialog.None; selected = null },
             title = {
                 Text(when (dialog) {
-                    AndroidFileDialog.NewFile -> "New file"
-                    AndroidFileDialog.NewFolder -> "New folder"
-                    AndroidFileDialog.Rename -> "Rename"
-                    AndroidFileDialog.Delete -> "Delete ${selected?.name.orEmpty()}?"
+                    AndroidFileDialog.NewFile -> s(R.string.file_manager_create_file)
+                    AndroidFileDialog.NewFolder -> s(R.string.file_manager_create_folder)
+                    AndroidFileDialog.Rename -> s(R.string.file_manager_rename)
+                    AndroidFileDialog.Delete -> s(R.string.file_manager_delete_named, selected?.name.orEmpty())
                     AndroidFileDialog.None -> ""
                 })
             },
             text = {
                 if (dialog == AndroidFileDialog.Delete) {
-                    Text(if (selected?.isDirectory == true) "The folder and all of its contents will be permanently deleted." else "This item will be permanently deleted.")
+                    Text(if (selected?.isDirectory == true) s(R.string.file_manager_delete_folder_body) else s(R.string.file_manager_delete_item_body))
                 } else {
-                    OutlinedTextField(value = draftName, onValueChange = { draftName = it }, label = { Text("Name") }, singleLine = true)
+                    OutlinedTextField(value = draftName, onValueChange = { draftName = it }, label = { Text(s(R.string.file_manager_new_name)) }, singleLine = true)
                 }
             },
             confirmButton = {
@@ -490,12 +498,12 @@ internal fun AndroidAlpineFileManagerScreen(
                                 when (operation) {
                                     AndroidFileDialog.NewFile -> {
                                         val target = joinAndroidFilePath(path, name)
-                                        require(!runtime.fileSystem.exists(target)) { "An item named $name already exists." }
+                                        require(!runtime.fileSystem.exists(target)) { s(R.string.file_manager_name_exists, name) }
                                         runtime.fileSystem.write(target, ByteArray(0))
                                     }
                                     AndroidFileDialog.NewFolder -> {
                                         val target = joinAndroidFilePath(path, name)
-                                        require(!runtime.fileSystem.exists(target)) { "An item named $name already exists." }
+                                        require(!runtime.fileSystem.exists(target)) { s(R.string.file_manager_name_exists, name) }
                                         runtime.fileSystem.createDirectories(target)
                                     }
                                     AndroidFileDialog.Rename -> {
@@ -505,23 +513,23 @@ internal fun AndroidAlpineFileManagerScreen(
                                     AndroidFileDialog.Delete -> runtime.fileSystem.remove(item!!.path, recursive = item.isDirectory)
                                     AndroidFileDialog.None -> Unit
                                 }
-                            }.onFailure { error = it.message ?: "File operation failed." }
+                            }.onFailure { error = it.message ?: s(R.string.file_manager_operation_failed) }
                             selected = null
                             refresh()
                         }
                     },
-                ) { Text(if (dialog == AndroidFileDialog.Delete) "Delete" else "Confirm") }
+                ) { Text(if (dialog == AndroidFileDialog.Delete) s(R.string.file_manager_delete) else s(R.string.common_confirm)) }
             },
-            dismissButton = { TextButton(onClick = { dialog = AndroidFileDialog.None; selected = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { dialog = AndroidFileDialog.None; selected = null }) { Text(s(R.string.common_cancel)) } },
         )
     }
 
     error?.let { message ->
         AlertDialog(
             onDismissRequest = { error = null },
-            title = { Text("File operation failed") },
+            title = { Text(s(R.string.file_manager_operation_failed)) },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = { error = null }) { Text("OK") } },
+            confirmButton = { TextButton(onClick = { error = null }) { Text(s(R.string.common_ok)) } },
         )
     }
 }
@@ -538,7 +546,7 @@ private fun AndroidFileListItem(entry: AndroidAlpineFileEntry, onOpen: () -> Uni
             Text(entry.name, color = AetherOnSurface, maxLines = 1)
             Text(if (entry.isDirectory) DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(entry.modifiedAtMillis)) else formatAndroidFileSize(entry.size), color = AetherOnSurfaceVariant, style = MaterialTheme.typography.labelSmall)
         }
-        IconButton(onClick = onMore) { Icon(Icons.Rounded.MoreVert, "More") }
+        IconButton(onClick = onMore) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.common_more)) }
     }
 }
 
@@ -549,7 +557,7 @@ private fun AndroidFileGridItem(entry: AndroidAlpineFileEntry, onOpen: () -> Uni
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            IconButton(onClick = onMore, modifier = Modifier.size(32.dp)) { Icon(Icons.Rounded.MoreVert, "More") }
+            IconButton(onClick = onMore, modifier = Modifier.size(32.dp)) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.common_more)) }
         }
         Icon(if (entry.isDirectory) Icons.Rounded.Folder else Icons.Rounded.Description, null, tint = if (entry.isDirectory) AetherPrimary else AetherOnSurfaceVariant, modifier = Modifier.size(40.dp))
         Spacer(Modifier.size(8.dp))
@@ -575,18 +583,18 @@ private fun SoraEditorScreen(
                 Modifier.fillMaxWidth().background(AetherSurface).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, context.getString(R.string.common_back)) }
                 Column(Modifier.weight(1f)) {
                     Text(entry.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                     Text(entry.path, style = MaterialTheme.typography.labelSmall, color = AetherOnSurfaceVariant, maxLines = 1)
                 }
                 IconButton(onClick = { wrapsLines = !wrapsLines; editor?.setWordwrap(wrapsLines) }) {
-                    Icon(Icons.Rounded.WrapText, "Toggle line wrapping", tint = if (wrapsLines) AetherPrimary else AetherOnSurfaceVariant)
+                    Icon(Icons.Rounded.WrapText, context.getString(R.string.editor_toggle_wrap), tint = if (wrapsLines) AetherPrimary else AetherOnSurfaceVariant)
                 }
                 IconButton(onClick = {
                     val content = editor?.text?.toString() ?: initialContent
                     onSave(content)
-                }) { Icon(Icons.Rounded.Save, "Save") }
+                }) { Icon(Icons.Rounded.Save, context.getString(R.string.common_save)) }
             }
         },
     ) { padding ->
@@ -624,13 +632,13 @@ private suspend fun importAndroidDocument(
     document: DocumentFile,
 ) {
     val name = document.name?.trim().orEmpty()
-    require(validAndroidFileName(name)) { "The selected item has an invalid name." }
+    require(validAndroidFileName(name)) { context.getString(R.string.file_manager_invalid_name) }
     val target = joinAndroidFilePath(parentPath, name)
-    require(!runtime.fileSystem.exists(target)) { "An item named $name already exists." }
+    require(!runtime.fileSystem.exists(target)) { context.getString(R.string.file_manager_name_exists, name) }
 
     if (!document.isDirectory) {
         val input = context.contentResolver.openInputStream(document.uri)
-            ?: error("Unable to read $name.")
+            ?: error(context.getString(R.string.file_manager_unable_read, name))
         input.use { runtime.importFile(target, it) }
         return
     }

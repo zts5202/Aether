@@ -12,12 +12,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.sp
-import com.zhousl.aether.R
-import com.zhousl.aether.data.AppLanguage
 import com.zhousl.aether.data.AppThemeMode
 import com.zhousl.aether.platform.LocalReduceMotion
 import com.zhousl.aether.platform.rememberPlatformAccessibilityPreferences
@@ -102,13 +97,6 @@ private val DarkAetherColors = darkColorScheme(
     outline = DarkAetherPalette.outline,
 )
 
-val VazirmatnFontFamily = FontFamily(
-    Font(R.font.vazirmatn_regular, FontWeight.Normal),
-    Font(R.font.vazirmatn_medium, FontWeight.Medium),
-    Font(R.font.vazirmatn_semibold, FontWeight.SemiBold),
-    Font(R.font.vazirmatn_bold, FontWeight.Bold)
-)
-
 private fun getAetherTypography(fontFamily: FontFamily) = Typography(
     headlineLarge = TextStyle(
         fontFamily = fontFamily,
@@ -171,7 +159,6 @@ private fun getAetherTypography(fontFamily: FontFamily) = Typography(
 @Composable
 fun AetherTheme(
     themeMode: AppThemeMode = AppThemeMode.System,
-    language: AppLanguage = AppLanguage.English,
     content: @Composable () -> Unit
 ) {
     val darkTheme = when (themeMode) {
@@ -183,21 +170,10 @@ fun AetherTheme(
     SideEffect {
         updateAetherPalette(darkTheme, accessibility.increasedContrast)
     }
-    val currentFontFamily = if (language == AppLanguage.Persian) {
-        VazirmatnFontFamily
-    } else {
-        FontFamily.SansSerif
-    }
-    val layoutDirection = if (language == AppLanguage.Persian) {
-        LayoutDirection.Rtl
-    } else {
-        LayoutDirection.Ltr
-    }
-    val typography = remember(currentFontFamily) {
-        getAetherTypography(currentFontFamily)
+    val typography = remember {
+        getAetherTypography(FontFamily.SansSerif)
     }
     CompositionLocalProvider(
-        LocalLayoutDirection provides layoutDirection,
         LocalReduceMotion provides accessibility.reduceMotion,
     ) {
         MaterialTheme(

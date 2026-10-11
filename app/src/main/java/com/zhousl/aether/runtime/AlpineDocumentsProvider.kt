@@ -16,6 +16,7 @@ import android.webkit.MimeTypeMap
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
+import com.zhousl.aether.R
 import java.util.Locale
 
 /** Makes the installed Alpine filesystem available in Android's system document picker. */
@@ -42,7 +43,7 @@ class AlpineDocumentsProvider : DocumentsProvider() {
                     Root.COLUMN_ROOT_ID to AlpineDocumentStore.RootId,
                     Root.COLUMN_DOCUMENT_ID to root.documentId,
                     Root.COLUMN_TITLE to application.loadLabel(context!!.packageManager).toString(),
-                    Root.COLUMN_SUMMARY to "Alpine",
+                    Root.COLUMN_SUMMARY to context!!.getString(R.string.alpine_title),
                     Root.COLUMN_ICON to application.icon,
                     Root.COLUMN_FLAGS to (Root.FLAG_LOCAL_ONLY or Root.FLAG_SUPPORTS_CREATE or Root.FLAG_SUPPORTS_IS_CHILD),
                     Root.COLUMN_MIME_TYPES to "*/*",
@@ -144,7 +145,11 @@ class AlpineDocumentsProvider : DocumentsProvider() {
         }
         addProjectedRow(mapOf(
             Document.COLUMN_DOCUMENT_ID to document.documentId,
-            Document.COLUMN_DISPLAY_NAME to document.displayName,
+            Document.COLUMN_DISPLAY_NAME to if (document.guestPath == "/") {
+                context!!.getString(R.string.alpine_title)
+            } else {
+                document.displayName
+            },
             Document.COLUMN_MIME_TYPE to mimeType,
             Document.COLUMN_FLAGS to flags,
             Document.COLUMN_SIZE to if (document.isDirectory) null else document.size,

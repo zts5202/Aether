@@ -37,7 +37,5 @@ actual fun platformDynamicPromptValues(): Map<String, String> {
 
 fun defaultAppLanguage(locale: Locale): AppLanguage = when {
     locale.language.equals("zh", ignoreCase = true) -> AppLanguage.SimplifiedChinese
-    locale.language.equals("fa", ignoreCase = true) -> AppLanguage.Persian
-    locale.language.equals("ru", ignoreCase = true) -> AppLanguage.Russian
     else -> AppLanguage.English
 }
