@@ -22,8 +22,22 @@ class PhoneUseTextEntryTest {
         assertTrue(isWeChatPackage("com.tencent.mm"))
         assertFalse(isWeChatPackage("com.tencent.mm.plugin"))
         assertFalse(isWeChatPackage("com.microsoft.emmx"))
+        assertTrue(mentionsWeChat(null, "com.tencent.mm/.ui.LauncherUI"))
+        assertTrue(mentionsWeChat("android", "ActivityRecord{2 u0 com.tencent.mm/.ui.LauncherUI t9}"))
+        assertFalse(mentionsWeChat("com.tencent.mm.plugin", "com.tencent.mm.plugin/Foo"))
+        assertFalse(mentionsWeChat("com.tencent.wetype", "微信键盘"))
         assertEquals("text", normalizePhoneUseAction("fill_text"))
         assertEquals("tap", normalizePhoneUseAction("tap"))
+    }
+
+    @Test fun rejectedNodeWriteContinuesToClipboardPaste() {
+        assertTrue(shouldRecoverTextEntryWithClipboard(IllegalStateException("Focused field rejected text. Use an editable node_id.")))
+        assertTrue(shouldRecoverTextEntryWithClipboard(IllegalStateException("No focused input on this display. Use text with an editable node_id.")))
+        assertTrue(shouldRecoverTextEntryWithClipboard(PhoneUseElementException("action_rejected", "The target rejected text.")))
+        assertTrue(shouldRecoverTextEntryWithClipboard(PhoneUseElementException("action_unsupported", "The target does not support text.")))
+        assertFalse(shouldRecoverTextEntryWithClipboard(PhoneUseElementException("stale_observation", "stale")))
+        assertFalse(shouldRecoverTextEntryWithClipboard(IllegalStateException("scroll requires node_id.")))
+        assertFalse(shouldRecoverTextEntryWithClipboard(kotlinx.coroutines.CancellationException("cancelled")))
     }
 
     @Test fun readbackRejectsUnchangedAndAppendedText() {
@@ -41,6 +55,11 @@ class PhoneUseTextEntryTest {
         assertEquals(listOf(500 to 1804, 500 to 1756), points)
         assertTrue(points.all { it.second < 2000 })
         val keyboard = Rect(0, 2000, 1080, 2400)
+        val presses = inputLongPressPoints(900, 2100, density = 2f, screenWidth = 1080, screenHeight = 2400, keyboardTop = 2000)
+        assertEquals(900 to 1999, presses.first())
+        assertTrue(presses.all { it.second < 2000 })
+        assertTrue(presses.any { it.first < 900 })
+        assertTrue(inputLongPressPoints(1, 1, 2f, 0, 2400, null).isEmpty())
         assertTrue(shouldRejectKeyboardTap(true, keyboard, 100, 2100))
         assertFalse(shouldRejectKeyboardTap(true, keyboard, 100, 1800))
         assertFalse(shouldRejectKeyboardTap(false, keyboard, 100, 2100))
@@ -113,9 +132,28 @@ class PhoneUseTextEntryTest {
         assertTrue(outcome.reflection.contains("不能当作成功"))
         assertTrue(outcome.reflection.contains("微信 com.tencent.mm"))
         assertTrue(outcome.reflection.contains("不要点软键盘退格，也不要请用户手动粘贴"))
+        assertTrue(outcome.reflection.contains("不要逐键打拼音"))
+        assertTrue(outcome.reflection.contains("不要请用户手动打字或发送"))
+        assertTrue(outcome.reflection.contains("未校验不得当作成功"))
         assertTrue(outcome.reflection.contains("输入法"))
         assertFalse(outcome.reflection.contains("请人手粘贴"))
-        assertEquals(keyboardTapReflection().contains("不要点软键盘退格"), true)
+        assertTrue(host.log.first() == "clipboard")
+        assertTrue(host.log.indexOf("set_text") < host.log.indexOf("paste"))
+        assertTrue(host.log.indexOf("tap") < host.log.indexOf("long_press"))
+        assertTrue(host.log.indexOf("paste") < host.log.indexOf("long_press"))
+        assertEquals(keyboardTapReflection().contains("不要逐键打拼音"), true)
+        assertEquals(keyboardTapReflection().contains("不要请用户手动打字或发送"), true)
+    }
+
+    @Test fun systemPasteShortcutWithoutReadbackIsNotSuccess() = runTest {
+        val host = FakeHost()
+        host.shortcutResult = true
+        val outcome = PhoneUseTextEntry(host).enter("你好")
+        assertFalse(outcome.verified)
+        assertEquals("", outcome.method)
+        assertEquals(1, host.shortcuts)
+        assertEquals("4", host.text)
+        assertTrue(outcome.reflection.contains("不能当作成功"))
     }
 
     @Test fun glyphLocatorFindsRenderedTextAndIgnoresABlankField() {
@@ -197,23 +235,31 @@ class PhoneUseTextEntryTest {
         var acceptCut = false
         var pasteBehavior: ((attempt: Int, clip: String) -> Boolean)? = null
         var pastes = 0
+        var shortcuts = 0
+        var shortcutResult = false
         val taps = mutableListOf<Pair<Int, Int>>()
         val presses = mutableListOf<Pair<Int, Int>>()
+        val log = mutableListOf<String>()
         var labels: Map<String, Pair<Int, Int>> = emptyMap()
         override val weChat = true
         override val emptyTree = true
         override val density = 2f
         override val screenWidth = 1080
         override val screenHeight = 2400
-        override fun writeClipboard(text: String) { clip = text }
+        override fun writeClipboard(text: String) {
+            log += "clipboard"
+            clip = text
+        }
         override fun fieldText(): String? = text
         override fun trySetText(text: String): Boolean {
+            log += "set_text"
             if (!acceptSetText) return false
             if (applySetText) this.text = text
             return true
         }
         override fun trySelectAll(): Boolean = acceptSelect
         override fun tryPaste(): Boolean {
+            log += "paste"
             pastes++
             pasteBehavior?.let { return it(pastes, clip) }
             if (!acceptPaste) return false
@@ -230,12 +276,21 @@ class PhoneUseTextEntryTest {
         override fun anchor(): Pair<Int, Int> = 500 to 1800
         override fun keyboardTop(): Int? = 2000
         override suspend fun tap(x: Int, y: Int) {
+            log += "tap"
             taps += x to y
             val label = labels.entries.firstOrNull { it.value == x to y }?.key ?: return
             if (label == "粘贴" || label == "Paste") text = clip
             if (label == "剪切" || label == "Cut") text = ""
         }
-        override suspend fun longPress(x: Int, y: Int) { presses += x to y }
+        override suspend fun longPress(x: Int, y: Int) {
+            log += "long_press"
+            presses += x to y
+        }
+        override suspend fun trySystemPasteShortcut(): Boolean {
+            log += "shortcut"
+            shortcuts++
+            return shortcutResult
+        }
         override suspend fun capture(): Bitmap? = null
     }
 }

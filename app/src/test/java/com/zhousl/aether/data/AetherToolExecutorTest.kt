@@ -13,6 +13,13 @@ class AetherToolExecutorTest {
         assertEquals(listOf("device", "portrait", "landscape"),
             (0 until orientation.getJSONArray("enum").length()).map { orientation.getJSONArray("enum").getString(it) })
         assertTrue(orientation.getString("description").contains("Virtual Display"))
+        val text = definition.getJSONObject("parameters").getJSONObject("properties").getJSONObject("text").getString("description")
+        assertTrue(text.contains("com.tencent.mm"))
+        assertTrue(text.contains("text_verified"))
+        assertTrue(text.contains("pinyin"))
+        assertTrue(text.contains("do not ask the user to type, paste, or send"))
+        assertTrue(text.contains("Focused field rejected text"))
+        assertFalse(text.contains("focused editable field is required"))
     }
 
     @Test

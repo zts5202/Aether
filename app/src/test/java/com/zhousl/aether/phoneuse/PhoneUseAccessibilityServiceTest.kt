@@ -427,6 +427,56 @@ class PhoneUseAccessibilityServiceTest {
         assertTrue(service.needsVerifiedClipboardPaste(0))
     }
 
+    @Test fun focusedInputAppDoesNotHideWeChat() {
+        val chat = AccessibilityNodeInfo.obtain().apply {
+            packageName = "com.tencent.mm"
+            text = "聊天记录"
+            contentDescription = "聊天记录"
+            isVisibleToUser = true
+            isEnabled = true
+        }
+        val keys = AccessibilityNodeInfo.obtain().apply {
+            packageName = "com.tencent.wetype"
+            text = "拼音"
+            contentDescription = "拼音"
+            isVisibleToUser = true
+            isEnabled = true
+        }
+        val app = appWindow(chat, 10, AccessibilityWindowInfo.TYPE_APPLICATION, false)
+        val keyboard = appWindow(keys, 11, AccessibilityWindowInfo.TYPE_APPLICATION, true)
+        shadowOf(service).setWindowsOnDisplay(0, listOf(keyboard, app))
+        assertTrue(service.needsVerifiedClipboardPaste(0))
+    }
+
+    @Test fun weChatActivityTitleRequiresPasteWhenTheRootPackageDiffers() {
+        val node = AccessibilityNodeInfo.obtain().apply {
+            packageName = "android"
+            text = "聊天记录"
+            contentDescription = "聊天记录"
+            isVisibleToUser = true
+        }
+        val app = appWindow(node, 10, AccessibilityWindowInfo.TYPE_APPLICATION, true)
+        shadowOf(app).setTitle("com.tencent.mm/com.tencent.mm.ui.LauncherUI")
+        shadowOf(service).setWindowsOnDisplay(0, listOf(app))
+        assertTrue(service.needsVerifiedClipboardPaste(0))
+        shadowOf(app).setTitle("com.tencent.mm.plugin/Foo")
+        node.packageName = "com.tencent.mm.plugin"
+        assertFalse(service.needsVerifiedClipboardPaste(0))
+    }
+
+    @Test fun weChatChildPackageRequiresPaste() {
+        val node = window(0, 10, "消息")
+        node.packageName = ""
+        val child = AccessibilityNodeInfo.obtain().apply {
+            packageName = "com.tencent.mm"
+            isVisibleToUser = true
+            text = ""
+            contentDescription = ""
+        }
+        shadowOf(node).addChild(child)
+        assertTrue(service.needsVerifiedClipboardPaste(0))
+    }
+
     @Test fun weChatPasteDoesNotTreatRejectedSetTextAsSuccess() = runTest(timeout = 8.seconds) {
         val node = window(0, 10, "4")
         val field = SpannableStringBuilder("4")
