@@ -42,6 +42,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -369,7 +370,7 @@ class PhoneUseAccessibilityService : AccessibilityService() {
                 put("node_count", count)
                 put("truncated", truncated)
                 put("stdout", if (count == 0) {
-                    "没有可读的无障碍节点。微信或空树请用 text 剪贴板粘贴，不要把失败的 fill_text 当成成功，也不要点软键盘删除。"
+                    "没有可读的无障碍节点。微信或空树只能用 text 剪贴板粘贴（SET_TEXT、PASTE、长按「粘贴」）。不要把失败的 fill_text 当成成功，不要逐键打拼音，不要请用户手发，也不要点软键盘删除。"
                 } else "Phone Use element tree. Use node_id for actions; request screenshot only if needed.")
             }
             return ObservationSnapshot(json, snapshotNodes, windowIds)
@@ -646,6 +647,7 @@ class PhoneUseAccessibilityService : AccessibilityService() {
     }
 
     internal fun needsVerifiedClipboardPaste(displayId: Int): Boolean {
+        if (displayContainsWeChat(displayId)) return true
         val candidates = applicationWindows(displayId)
         if (candidates.isEmpty()) {
             if (displayId != Display.DEFAULT_DISPLAY) return true
@@ -662,6 +664,53 @@ class PhoneUseAccessibilityService : AccessibilityService() {
             if (isWeChatPackage(root.packageName?.toString())) return true
             return !treeHasContent(root)
         } finally { root.recycle() }
+    }
+
+    /** WeChat stays on the paste path even when the focused window is the IME or its package is blank. */
+    private fun displayContainsWeChat(displayId: Int, keep: AccessibilityNodeInfo? = null): Boolean {
+        for (window in rawDisplayWindows(displayId)) {
+            if (isOwnOverlay(window)) continue
+            if (mentionsWeChat(null, window.title)) return true
+            val root = window.root ?: continue
+            try {
+                if (shallowPackageIsWeChat(root, keep)) return true
+            } finally { if (root !== keep) root.recycle() }
+        }
+        if (displayId != Display.DEFAULT_DISPLAY) return false
+        val root = rootInActiveWindow ?: return false
+        try {
+            if (isOverlayRoot(root)) return false
+            return shallowPackageIsWeChat(root, keep)
+        } finally { if (root !== keep) root.recycle() }
+    }
+
+    private fun shallowPackageIsWeChat(
+        node: AccessibilityNodeInfo,
+        keep: AccessibilityNodeInfo?,
+        depth: Int = 0,
+        budget: IntArray = intArrayOf(32),
+    ): Boolean {
+        if (isWeChatPackage(node.packageName?.toString())) return true
+        if (depth >= 5 || budget[0] <= 0) return false
+        for (index in 0 until node.childCount) {
+            if (budget[0] <= 0) return false
+            budget[0]--
+            val child = node.getChild(index) ?: continue
+            try {
+                if (shallowPackageIsWeChat(child, keep, depth + 1, budget)) return true
+            } finally { if (child !== keep) child.recycle() }
+        }
+        return false
+    }
+
+    private fun runInputCommand(command: Array<String>): Boolean {
+        val process = ProcessBuilder(command.toList()).redirectErrorStream(true).start()
+        val finished = process.waitFor(700, TimeUnit.MILLISECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+            return false
+        }
+        return process.exitValue() == 0
     }
 
     internal fun inputMethodBounds(displayId: Int): Rect? {
@@ -773,13 +822,7 @@ class PhoneUseAccessibilityService : AccessibilityService() {
         override val screenHeight: Int = requestedHeight.coerceAtLeast(1)
 
         init {
-            val packages = applicationWindows(displayId).mapNotNull { window ->
-                val root = window.root ?: return@mapNotNull null
-                try {
-                    runCatching { root.packageName?.toString() }.getOrNull()
-                } finally { if (root !== field) root.recycle() }
-            }
-            weChat = packages.any(::isWeChatPackage) || isWeChatPackage(field?.packageName?.toString())
+            weChat = isWeChatPackage(field?.packageName?.toString()) || displayContainsWeChat(displayId, field)
             emptyTree = field == null
         }
 
@@ -863,7 +906,15 @@ class PhoneUseAccessibilityService : AccessibilityService() {
 
         override suspend fun longPress(x: Int, y: Int) {
             val endX = if (x < screenWidth - 2) x + 1 else (x - 1).coerceAtLeast(0)
-            gesture(displayId, x, y, endX, y, duration = 900)
+            gesture(displayId, x, y, endX, y, duration = 1000)
+        }
+
+        override suspend fun trySystemPasteShortcut(): Boolean = withContext(Dispatchers.IO) {
+            // Ctrl+A first so a following paste replaces existing draft text.
+            runCatching { runInputCommand(arrayOf("input", "keycombination", "113", "29")) }
+            val paste = runCatching { runInputCommand(arrayOf("input", "keyevent", "279")) }.getOrDefault(false)
+            val chord = runCatching { runInputCommand(arrayOf("input", "keycombination", "113", "50")) }.getOrDefault(false)
+            paste || chord
         }
 
         override suspend fun capture(): Bitmap? {

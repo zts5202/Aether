@@ -20,6 +20,7 @@ import com.zhousl.aether.phoneuse.PhoneUseElementException
 import com.zhousl.aether.phoneuse.PhoneUseAccessibilityService
 import com.zhousl.aether.phoneuse.keyboardTapReflection
 import com.zhousl.aether.phoneuse.normalizePhoneUseAction
+import com.zhousl.aether.phoneuse.shouldRecoverTextEntryWithClipboard
 import com.zhousl.aether.phoneuse.shouldRejectKeyboardTap
 import com.zhousl.aether.termux.TermuxBashTool
 import java.io.File
@@ -307,34 +308,43 @@ class AgentModeController(
                             keyboardEditRejected(action)
                         } else {
                             var targetResolution: String? = null
-                            if (usesElement && nodeId.isNotBlank()) {
-                                val rebound = withContext(Dispatchers.Main) {
-                                    service.nodeAction(
-                                        displayId, nodeId, action, text, arguments.optString("direction", "forward"),
-                                    )
-                                }
-                                targetResolution = if (rebound) "rebound_unique_match" else "refreshed_original_node"
-                            } else if (action == "text") {
-                                withContext(Dispatchers.Main) {
-                                    service.setFocusedText(displayId, text)
-                                }
-                            } else {
-                                require(action in setOf("tap", "click", "long_click")) { "scroll requires node_id." }
-                                when (val point = resolvePoint(arguments, "x", "y")) {
-                                    is ResolvedPoint.Invalid -> error(point.message)
-                                    is ResolvedPoint.Valid -> {
-                                        withContext(Dispatchers.Main) {
-                                            service.gesture(
-                                                displayId, point.x, point.y, duration = if (action == "long_click") 700 else 80,
-                                            )
+                            var pasteInstead = false
+                            try {
+                                if (usesElement && nodeId.isNotBlank()) {
+                                    val rebound = withContext(Dispatchers.Main) {
+                                        service.nodeAction(
+                                            displayId, nodeId, action, text, arguments.optString("direction", "forward"),
+                                        )
+                                    }
+                                    targetResolution = if (rebound) "rebound_unique_match" else "refreshed_original_node"
+                                } else if (action == "text") {
+                                    withContext(Dispatchers.Main) {
+                                        service.setFocusedText(displayId, text)
+                                    }
+                                } else {
+                                    require(action in setOf("tap", "click", "long_click")) { "scroll requires node_id." }
+                                    when (val point = resolvePoint(arguments, "x", "y")) {
+                                        is ResolvedPoint.Invalid -> error(point.message)
+                                        is ResolvedPoint.Valid -> {
+                                            withContext(Dispatchers.Main) {
+                                                service.gesture(
+                                                    displayId, point.x, point.y, duration = if (action == "long_click") 700 else 80,
+                                                )
+                                            }
+                                            updateCursorPosition(point.x, point.y)
                                         }
-                                        updateCursorPosition(point.x, point.y)
                                     }
                                 }
+                            } catch (error: Throwable) {
+                                if (action == "text" && shouldRecoverTextEntryWithClipboard(error)) pasteInstead = true else throw error
                             }
-                            JSONObject(observation(350)).apply {
-                                targetResolution?.let { put("target_resolution", it) }
-                            }.toString()
+                            if (pasteInstead) {
+                                verifiedClipboardText(service, displayId, text, arguments) { observation(it) }
+                            } else {
+                                JSONObject(observation(350)).apply {
+                                    targetResolution?.let { put("target_resolution", it) }
+                                }.toString()
+                            }
                         }
                     }
                     "swipe" -> {

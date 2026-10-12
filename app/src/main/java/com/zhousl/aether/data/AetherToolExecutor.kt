@@ -268,11 +268,14 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
                     put(
                         "text",
                         stringProperty(
-                            "For text: replace the contents of an editable node_id (preferred), or the focused field. Unicode is supported. " +
-                                "Empty text clears the field. Without node_id, a focused editable field is required. " +
-                                "WeChat and empty accessibility trees paste the clipboard instead: ACTION_PASTE / ACTION_SET_TEXT, then a real long-press and 粘贴. " +
+                            "For text/fill_text on WeChat (com.tencent.mm) or an empty tree with no editable node: this is the only input path. " +
+                                "It writes the full string to the clipboard, then ACTION_SET_TEXT and ACTION_PASTE, taps the field to show the keyboard, long-presses it, and taps 粘贴. " +
+                                "A system Ctrl+V or KEYCODE_PASTE shortcut is used when the device supports it. " +
                                 "Optional x,y (normalized 0..1000) is the input field when no editable node exists. " +
-                                "Success requires text_verified. Do not tap the soft keyboard to delete, and do not ask the user to paste.",
+                                "Do not type pinyin key by key, do not tap IME keys, and do not ask the user to type, paste, or send. " +
+                                "A missing Editable node or \"Focused field rejected text\" must not stop the action; the host continues with clipboard paste. " +
+                                "Success requires text_verified after readback or a screenshot of the target text. If text_verified is false, repeat the Chinese reflection verbatim. " +
+                                "Empty text clears by selecting all. Outside WeChat, text replaces an editable node_id or the focused field. Unicode is supported.",
                         ),
                     )
                 },

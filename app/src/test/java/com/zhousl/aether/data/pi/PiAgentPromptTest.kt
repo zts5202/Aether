@@ -56,5 +56,10 @@ class PiAgentPromptTest {
         assertTrue(instructions.contains("com.tencent.mm"))
         assertTrue(instructions.contains("粘贴"))
         assertTrue(instructions.contains("do not ask the user to paste manually"))
+        assertTrue(instructions.contains("Do not type pinyin key by key"))
+        assertTrue(instructions.contains("Do not ask the user to type or send the message"))
+        assertTrue(instructions.contains("Focused field rejected text"))
+        assertTrue(instructions.contains("禁止逐键拼音，禁止请用户手发"))
+        assertTrue(instructions.contains("Never report success without that check"))
     }
 }
