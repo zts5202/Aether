@@ -78,6 +78,10 @@
     <string name="statistics_reasoning">推理</string>
     <string name="statistics_dash">-</string>
     <string name="statistics_unavailable">暂无数据</string>
+    <string name="statistics_turn_cost">本轮费用</string>
+    <string name="statistics_session_cost">本次会话费用</string>
+    <string name="statistics_estimated_cost">约 %1$s</string>
+    <string name="statistics_price_unavailable">暂无定价</string>
     <string name="common_save">保存</string>
     <string name="common_search">搜索</string>
     <string name="common_on">开启</string>

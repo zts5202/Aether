@@ -170,6 +170,7 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.core.graphics.PathParser
 import com.zhousl.aether.R
 import com.zhousl.aether.data.InstalledSkill
+import com.zhousl.aether.data.estimateSessionCostCny
 import com.zhousl.aether.data.CreateExtensionSkillId
 import com.zhousl.aether.data.AppLanguage
 import com.zhousl.aether.data.AgentModeDisplayState
@@ -417,6 +418,9 @@ fun ConversationScreen(
         messages.sumOf { message -> message.usageStatistics?.totalTokens ?: 0L }
             .takeIf { it > 0L }
     }
+    val sessionEstimatedCostCny = remember(messages) {
+        estimateSessionCostCny(messages)
+    }
     val compactSuggestionText = compactSuggestion.percent?.let { percent ->
         stringResource(R.string.chat_compact_thread_context_percent, percent)
     } ?: stringResource(R.string.chat_compact_thread_context)
@@ -648,6 +652,7 @@ fun ConversationScreen(
                                     onRetry = { onRetryUserMessage(message.id) },
                                     onSwitchBranch = { delta -> onSwitchUserMessageBranch(message.id, delta) },
                                     sessionTotalTokens = sessionTotalTokens,
+                                    sessionEstimatedCostCny = sessionEstimatedCostCny,
                                 )
                             }
 
@@ -671,6 +676,7 @@ fun ConversationScreen(
                                     onRedo = { onRedoAgentMessage(lastMessage.id) },
                                     onDelete = { onDeleteMessage(lastMessage.id) },
                                     sessionTotalTokens = sessionTotalTokens,
+                                    sessionEstimatedCostCny = sessionEstimatedCostCny,
                                 )
                             }
 

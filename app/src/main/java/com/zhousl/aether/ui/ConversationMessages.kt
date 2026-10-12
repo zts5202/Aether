@@ -129,6 +129,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.zhousl.aether.R
+import com.zhousl.aether.data.estimateTurnCostCny
+import com.zhousl.aether.data.formatEstimatedCny
+import com.zhousl.aether.data.resolveUsageModelId
 import com.zhousl.aether.ui.theme.AetherMessageBubble
 import com.zhousl.aether.ui.theme.AetherError
 import com.zhousl.aether.ui.theme.AetherOnPrimaryContainer
@@ -159,6 +162,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Base64
+import java.math.BigDecimal
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.math.max
@@ -196,6 +200,7 @@ fun ConversationMessageBubble(
     onRetry: () -> Unit,
     onSwitchBranch: (Int) -> Unit,
     sessionTotalTokens: Long? = null,
+    sessionEstimatedCostCny: BigDecimal? = null,
 ) {
     if (message.author == MessageAuthor.User) {
         UserMessageBlock(
@@ -219,6 +224,7 @@ fun ConversationMessageBubble(
             onRedo = onRedo,
             onDelete = onDelete,
             sessionTotalTokens = sessionTotalTokens,
+            sessionEstimatedCostCny = sessionEstimatedCostCny,
         )
     }
 }
@@ -834,6 +840,7 @@ private fun AssistantMessageBlock(
     onRedo: () -> Unit,
     onDelete: () -> Unit,
     sessionTotalTokens: Long?,
+    sessionEstimatedCostCny: BigDecimal?,
 ) {
     val shouldFoldWorkBeforeFinalText = message.text.isNotBlank() &&
         (message.reasoningTrace != null ||
@@ -924,7 +931,9 @@ private fun AssistantMessageBlock(
         if (showActions) {
             AssistantMessageActions(
                 usageStatistics = message.usageStatistics,
+                turnModelId = resolveUsageModelId(message),
                 sessionTotalTokens = sessionTotalTokens,
+                sessionEstimatedCostCny = sessionEstimatedCostCny,
                 actionsEnabled = actionsEnabled,
                 onCopy = onCopy,
                 onRedo = onRedo,
@@ -989,9 +998,12 @@ fun ConversationAssistantGroupBubble(
     onRedo: () -> Unit,
     onDelete: () -> Unit,
     sessionTotalTokens: Long? = null,
+    sessionEstimatedCostCny: BigDecimal? = null,
 ) {
     if (messages.isEmpty()) return
-    val groupUsageStatistics = messages.lastOrNull { it.usageStatistics != null }?.usageStatistics
+    val groupUsageMessage = messages.lastOrNull { it.usageStatistics != null }
+    val groupUsageStatistics = groupUsageMessage?.usageStatistics
+    val groupUsageModelId = groupUsageMessage?.let(::resolveUsageModelId).orEmpty()
     val thoughtDurationMillis = messages.lastOrNull()?.thoughtDurationMillis
     val hasReasoningTrace = messages.any { it.reasoningTrace != null }
     val showActions = messages.none { it.assistantActionsHidden }
@@ -1031,7 +1043,9 @@ fun ConversationAssistantGroupBubble(
             if (showActions) {
                 AssistantMessageActions(
                     usageStatistics = groupUsageStatistics,
+                    turnModelId = groupUsageModelId,
                     sessionTotalTokens = sessionTotalTokens,
+                    sessionEstimatedCostCny = sessionEstimatedCostCny,
                     actionsEnabled = actionsEnabled,
                     onCopy = onCopy,
                     onRedo = onRedo,
@@ -1141,7 +1155,9 @@ fun ConversationAssistantGroupBubble(
         if (showActions) {
             AssistantMessageActions(
                 usageStatistics = groupUsageStatistics,
+                turnModelId = groupUsageModelId,
                 sessionTotalTokens = sessionTotalTokens,
+                sessionEstimatedCostCny = sessionEstimatedCostCny,
                 actionsEnabled = actionsEnabled,
                 onCopy = onCopy,
                 onRedo = onRedo,
@@ -3139,7 +3155,9 @@ private fun AssistantMessageAction(
 @Composable
 private fun AssistantMessageActions(
     usageStatistics: ChatUsageStatistics?,
+    turnModelId: String,
     sessionTotalTokens: Long?,
+    sessionEstimatedCostCny: BigDecimal?,
     actionsEnabled: Boolean,
     onCopy: () -> Unit,
     onRedo: () -> Unit,
@@ -3204,7 +3222,9 @@ private fun AssistantMessageActions(
             ) {
                 MessageStatisticsPopup(
                     usageStatistics = usageStatistics,
+                    turnModelId = turnModelId,
                     sessionTotalTokens = sessionTotalTokens,
+                    sessionEstimatedCostCny = sessionEstimatedCostCny,
                     modifier = Modifier.graphicsLayer {
                         alpha = statisticsPopupAlpha
                         scaleX = statisticsPopupScale
@@ -3220,9 +3240,25 @@ private fun AssistantMessageActions(
 @Composable
 private fun MessageStatisticsPopup(
     usageStatistics: ChatUsageStatistics?,
+    turnModelId: String,
     sessionTotalTokens: Long?,
+    sessionEstimatedCostCny: BigDecimal?,
     modifier: Modifier = Modifier,
 ) {
+    val unavailable = stringResource(R.string.statistics_price_unavailable)
+    val turnCost = usageStatistics?.let {
+        estimateTurnCostCny(it, turnModelId.ifBlank { it.modelId })
+    }
+    val turnCostText = stringResource(
+        R.string.statistics_estimated_cost,
+        formatEstimatedCny(turnCost ?: BigDecimal.ZERO),
+    )
+    val sessionCostText = stringResource(
+        R.string.statistics_estimated_cost,
+        formatEstimatedCny(sessionEstimatedCostCny ?: BigDecimal.ZERO),
+    )
+    val turnCostLabel = if (turnCost == null) unavailable else turnCostText
+    val sessionCostLabel = if (sessionEstimatedCostCny == null) unavailable else sessionCostText
     Column(
         modifier = modifier
             .widthIn(min = 236.dp, max = 300.dp)
@@ -3263,9 +3299,17 @@ private fun MessageStatisticsPopup(
                     ?: stringResource(R.string.statistics_unavailable),
             )
             MessageStatisticRow(
+                label = stringResource(R.string.statistics_session_cost),
+                value = sessionCostLabel,
+            )
+            MessageStatisticRow(
                 label = stringResource(R.string.statistics_turn_tokens),
                 value = usageStatistics?.totalTokens?.let(::formatTokenCount)
                     ?: stringResource(R.string.statistics_unavailable),
+            )
+            MessageStatisticRow(
+                label = stringResource(R.string.statistics_turn_cost),
+                value = turnCostLabel,
             )
             MessageStatisticRow(
                 label = stringResource(R.string.statistics_reasoning_tokens),

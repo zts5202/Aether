@@ -110,6 +110,7 @@ data class ChatUsageStatistics(
     val outputDurationMillis: Long? = null,
     val requestCount: Int = 1,
     val tokenUsageSource: String = "unavailable",
+    val modelId: String = "",
     val startedAtMillis: Long = 0L,
     val firstTokenAtMillis: Long? = null,
     val completedAtMillis: Long = 0L,
