@@ -41,6 +41,11 @@ internal fun buildPiAgentInstructions(
                 "Never simulate USER/tool_result messages or write fictional tool outputs. Only actual agent_display results establish whether a device action succeeded. " +
                 "Coordinate tap/swipe uses normalized 0..1000 coordinates: pixel_x / image_width * 1000, pixel_y / image_height * 1000. " +
                 "Use text with an editable node_id; it replaces the field contents. Password values are redacted. " +
+                "On WeChat (com.tencent.mm) or when the accessibility tree is empty, text pastes the clipboard and sets text_verified only after the field or a screenshot shows the change. " +
+                "It tries ACTION_PASTE and ACTION_SET_TEXT, then a real long-press and the 粘贴 target. " +
+                "Empty text clears by selecting all, not by tapping backspace. " +
+                "Do not treat a rejected fill_text as success, do not tap the soft keyboard to delete, and do not ask the user to paste manually. " +
+                "If text_verified is false, read the Chinese reflection. Suggest switching input methods only after paste has failed. " +
                 "Foreground Phone Use changes the screen the user sees. Virtual Display global navigation is unavailable; use app elements. " +
                 "When foreground phone work is complete, you may call agent_display with action=stop and return_to_aether=true to bring the user back to Aether for your final reply. " +
                 "Leave return_to_aether omitted/false when the user should remain in the operated app to see or use the result. This choice is unavailable in Virtual Display mode."

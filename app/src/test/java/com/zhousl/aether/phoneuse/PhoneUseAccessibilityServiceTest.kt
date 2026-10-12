@@ -1,7 +1,10 @@
 package com.zhousl.aether.phoneuse
 
 import android.app.Application
+import android.content.ClipboardManager
+import android.content.Context
 import android.graphics.Rect
+import android.text.SpannableStringBuilder
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -13,6 +16,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.*
@@ -407,6 +411,65 @@ class PhoneUseAccessibilityServiceTest {
         assertFalse(action.isCompleted)
         dispatched.callback().onCompleted(dispatched.description())
         action.await()
+    }
+
+    @Test fun weChatAndEmptyTreesRequireVerifiedPaste() {
+        val node = window(0, 10, "4")
+        node.packageName = "com.tencent.mm"
+        assertTrue(service.needsVerifiedClipboardPaste(0))
+        node.packageName = "com.microsoft.emmx"
+        assertFalse(service.needsVerifiedClipboardPaste(0))
+        node.text = ""
+        node.contentDescription = ""
+        node.isEditable = false
+        assertTrue(service.needsVerifiedClipboardPaste(0))
+        shadowOf(service).setWindowsOnDisplay(0, emptyList())
+        assertTrue(service.needsVerifiedClipboardPaste(0))
+    }
+
+    @Test fun weChatPasteDoesNotTreatRejectedSetTextAsSuccess() = runTest(timeout = 8.seconds) {
+        val node = window(0, 10, "4")
+        val field = SpannableStringBuilder("4")
+        node.text = field
+        node.packageName = "com.tencent.mm"
+        shadowOf(node).setOnPerformActionListener { action, _ ->
+            when (action) {
+                AccessibilityNodeInfo.ACTION_SET_TEXT -> false
+                AccessibilityNodeInfo.ACTION_PASTE -> {
+                    field.clear()
+                    field.append("你好")
+                    true
+                }
+                else -> true
+            }
+        }
+        val outcome = service.enterVerifiedText(0, "你好", null, null, 1080, 2400)
+        assertTrue(outcome.reflection, outcome.verified)
+        assertEquals("tree", outcome.verifiedBy)
+        assertTrue(outcome.method == "paste" || outcome.method == "paste_overwrite")
+        val clip = (service.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
+        assertEquals("你好", clip?.getItemAt(0)?.text?.toString())
+        assertTrue(shadowOf(service).gesturesDispatched.isEmpty())
+    }
+
+    @Test fun weChatClearUsesSelectionInsteadOfTheKeyboard() = runTest(timeout = 8.seconds) {
+        val node = window(0, 10, "4")
+        val field = SpannableStringBuilder("4")
+        node.text = field
+        node.packageName = "com.tencent.mm"
+        shadowOf(node).setOnPerformActionListener { action, arguments ->
+            if (action == AccessibilityNodeInfo.ACTION_SET_TEXT) {
+                val value = arguments?.getCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE)?.toString().orEmpty()
+                if (value.isNotEmpty()) return@setOnPerformActionListener false
+                field.clear()
+            }
+            true
+        }
+        val outcome = service.enterVerifiedText(0, "", null, null, 1080, 2400)
+        assertTrue(outcome.reflection, outcome.verified)
+        assertEquals("set_text_clear", outcome.method)
+        assertEquals("", field.toString())
+        assertTrue(shadowOf(service).gesturesDispatched.isEmpty())
     }
 
     @Test fun cancelledGestureReportsFailure() = runTest {

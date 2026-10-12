@@ -43,4 +43,18 @@ class PiAgentPromptTest {
         assertFalse(disabledInstructions.contains("Chrome Extension tool"))
         assertTrue(enabledInstructions.contains("Chrome Extension tool"))
     }
+
+    @Test
+    fun phoneUseInstructionsRequireVerifiedWeChatPaste() {
+        val instructions = buildPiAgentInstructions(
+            settings = AppSettings(),
+            workspaceDirectory = "/workspace",
+            runtimeId = LocalRuntimeId.Alpine,
+            agentModeEnabled = true,
+        )
+        assertTrue(instructions.contains("text_verified"))
+        assertTrue(instructions.contains("com.tencent.mm"))
+        assertTrue(instructions.contains("粘贴"))
+        assertTrue(instructions.contains("do not ask the user to paste manually"))
+    }
 }
