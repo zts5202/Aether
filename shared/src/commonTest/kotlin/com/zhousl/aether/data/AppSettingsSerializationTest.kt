@@ -24,6 +24,8 @@ class AppSettingsSerializationTest {
         assertEquals(AgentModeDisplayOrientation.Device, defaults.agentModeDisplayOrientation)
         assertEquals(AgentModeDisplayOrientation.Device, AgentModeDisplayOrientation.fromStorage("unknown"))
         assertEquals(true, defaults.phoneUseAllowStrategySwitch)
+        assertEquals(true, defaults.phoneUseShowCommentary)
+        assertEquals(true, defaults.phoneUseShowEdgeGlow)
         assertEquals(PhoneUseInputStrategy.ElementTreeFirst, defaults.phoneUseInputStrategy)
         assertEquals(PhoneUseOutputStrategy.ElementFirst, defaults.phoneUseOutputStrategy)
         val settings = defaults.copy(
@@ -33,6 +35,8 @@ class AppSettingsSerializationTest {
             phoneUseOutputStrategy = PhoneUseOutputStrategy.GestureFirst,
             phoneUseAllowStrategySwitch = false,
             phoneUseVirtualDisplayEnabled = true,
+            phoneUseShowCommentary = false,
+            phoneUseShowEdgeGlow = false,
             agentModeDisplayOrientation = AgentModeDisplayOrientation.Landscape,
         )
         assertEquals(settings, parseAppSettings(serializeAppSettings(settings)))

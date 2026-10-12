@@ -1068,6 +1068,11 @@
     <string name="phone_use_element_first">元素操作优先</string>
     <string name="phone_use_gesture_first">坐标手势优先</string>
     <string name="phone_use_allow_strategy_switch">允许智能体手动切换到备选策略</string>
+    <string name="phone_use_visual_feedback">视觉反馈</string>
+    <string name="phone_use_show_commentary">思考气泡</string>
+    <string name="phone_use_show_commentary_description">显示右侧进度与思考说明</string>
+    <string name="phone_use_show_edge_glow">边框光效</string>
+    <string name="phone_use_show_edge_glow_description">显示屏幕四周彩色光晕</string>
     <string name="phone_use_virtual_enabled">启用虚拟屏幕（实验性）</string>
     <string name="phone_use_virtual_grant">选择虚拟屏幕的授权方式。</string>
     <string name="phone_use_authorizing">正在授权…</string>

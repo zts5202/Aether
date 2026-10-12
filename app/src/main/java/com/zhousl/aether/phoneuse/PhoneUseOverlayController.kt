@@ -95,51 +95,80 @@ internal class PhoneUseOverlayController(
             draft = ""
         }
         state = next
-        if (next != null) {
-            // agent_display starts in Aether before launching another app. Prepare native
-            // shader/blur resources here, outside the edge's first visible animation frame.
-            if (preparedEdge == null) preparedEdge = createEdgeView()
-            entranceBlur.size
-        }
+        if (next?.showEdgeGlow == true && preparedEdge == null) preparedEdge = createEdgeView()
+        // agent_display starts in Aether before launching another app. Prepare native
+        // shader/blur resources here, outside the first visible animation frame.
+        if (next?.showCommentary == true) entranceBlur.size
         if (!show || next == null) { hide(); return }
+        if (!next.showEdgeGlow && !next.showCommentary) { hideVisualsNow(); return }
         val appearing = !visible
-        if (appearing) {
-            generation++
-            if (!attach()) return
-            visible = true
+        if (appearing) generation++
+        val edgeJustAttached = if (next.showEdgeGlow) attachEdge() else {
+            detachEdge()
+            false
+        }
+        if (next.showCommentary) attachCapsule() else detachCapsule()
+        if (edge == null && capsule == null) {
+            visible = false
+            return
+        }
+        visible = true
+        if (next.showEdgeGlow && edge != null && (appearing || edgeJustAttached)) {
             edge?.animate()?.cancel()
             edge?.alpha = 1f
             edge?.start()
         }
-        commentary?.setCommentary(next.commentaryId, next.commentary)
-        val hasText = next.commentary.isNotBlank() || isEditing
-        capsule?.let { view ->
-            if (hasText && (appearing || view.visibility != View.VISIBLE)) {
-                view.visibility = View.VISIBLE
-                view.alpha = 0f
-                view.translationY = dp(20).toFloat()
-                view.scaleX = .92f
-                view.scaleY = .76f
-                entranceAnimator?.cancel()
-                if (Build.VERSION.SDK_INT >= 31) {
-                    entranceAnimator = ValueAnimator.ofInt(18, 0).apply {
-                        duration = motionDuration(520)
-                        interpolator = easing
-                        addUpdateListener { view.setRenderEffect(entranceBlur[it.animatedValue as Int]) }
-                        start()
+        if (next.showCommentary) {
+            commentary?.setCommentary(next.commentaryId, next.commentary)
+            val hasText = next.commentary.isNotBlank() || isEditing
+            capsule?.let { view ->
+                if (hasText && (appearing || view.visibility != View.VISIBLE)) {
+                    view.visibility = View.VISIBLE
+                    view.alpha = 0f
+                    view.translationY = dp(20).toFloat()
+                    view.scaleX = .92f
+                    view.scaleY = .76f
+                    entranceAnimator?.cancel()
+                    if (Build.VERSION.SDK_INT >= 31) {
+                        entranceAnimator = ValueAnimator.ofInt(18, 0).apply {
+                            duration = motionDuration(520)
+                            interpolator = easing
+                            addUpdateListener { view.setRenderEffect(entranceBlur[it.animatedValue as Int]) }
+                            start()
+                        }
                     }
-                }
-                view.animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
-                    .setDuration(motionDuration(560)).setInterpolator(easing).start()
-            } else if (!hasText) view.visibility = View.INVISIBLE
+                    view.animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
+                        .setDuration(motionDuration(560)).setInterpolator(easing).start()
+                } else if (!hasText) view.visibility = View.INVISIBLE
+            }
         }
         applyWindowSuppression()
     }
 
-    private fun attach(): Boolean {
-        if (edge != null) return true
+    /** @return true when the edge window was added during this call. */
+    private fun attachEdge(): Boolean {
+        if (edge != null) return false
         updateScreenSize()
         val edgeView = preparedEdge ?: createEdgeView().also { preparedEdge = it }
+        val edgeParams = windowParams("$WINDOW_PREFIX edge", -1, -1).apply {
+            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        }
+        return try {
+            wm.addView(edgeView, edgeParams)
+            edge = edgeView
+            edgeView.requestApplyInsets()
+            true
+        } catch (error: RuntimeException) {
+            if (edgeView.parent != null) runCatching { wm.removeViewImmediate(edgeView) }
+            android.util.Log.w("PhoneUseOverlay", "Cannot attach accessibility feedback", error)
+            false
+        }
+    }
+
+    /** @return true when the commentary window was added during this call. */
+    private fun attachCapsule(): Boolean {
+        if (capsule != null) return false
+        updateScreenSize()
         val host = PhoneUseCapsuleLayout(service).apply {
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
@@ -153,27 +182,40 @@ internal class PhoneUseOverlayController(
         })
         text.setOnTouchListener { _, event -> detector.onTouchEvent(event); true }
         host.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionCapsule() }
-        val edgeParams = windowParams("$WINDOW_PREFIX edge", -1, -1).apply {
-            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        }
         val cardParams = windowParams("$WINDOW_PREFIX commentary", commentaryWidth(), -2)
-        try {
-            wm.addView(edgeView, edgeParams)
+        return try {
             wm.addView(host, cardParams)
+            capsule = host
+            commentary = text
+            capsuleParams = cardParams
+            host.visibility = View.INVISIBLE
+            positionCapsule()
+            true
         } catch (error: RuntimeException) {
-            if (edgeView.parent != null) runCatching { wm.removeViewImmediate(edgeView) }
             if (host.parent != null) runCatching { wm.removeViewImmediate(host) }
             android.util.Log.w("PhoneUseOverlay", "Cannot attach accessibility feedback", error)
-            return false
+            false
         }
-        edge = edgeView
-        capsule = host
-        commentary = text
-        capsuleParams = cardParams
-        host.visibility = View.INVISIBLE
-        positionCapsule()
-        edgeView.requestApplyInsets()
-        return true
+    }
+
+    private fun detachEdge() {
+        val view = edge ?: return
+        view.stop()
+        view.animate().cancel()
+        runCatching { wm.removeViewImmediate(view) }
+        edge = null
+    }
+
+    private fun detachCapsule() {
+        if (capsule == null) return
+        if (isEditing) closeEditor()
+        entranceAnimator?.cancel()
+        entranceAnimator = null
+        capsule?.animate()?.cancel()
+        capsule?.let { runCatching { wm.removeViewImmediate(it) } }
+        capsule = null
+        commentary = null
+        capsuleParams = null
     }
 
     private fun createEdgeView() = PhoneUseEdgeView(service).apply {
@@ -391,6 +433,16 @@ internal class PhoneUseOverlayController(
         // Never let an invisible capsule intercept touches during the exit animation.
         applyWindowSuppression()
         handler.postDelayed({ if (!visible && generation == token) detach() }, motionDuration(230))
+    }
+
+    /** Drop both feedback windows immediately so a disabled overlay cannot leave an untouchable surface. */
+    private fun hideVisualsNow() {
+        if (!visible && edge == null && capsule == null) return
+        visible = false
+        generation++
+        closeEditor()
+        handler.removeCallbacksAndMessages(null)
+        detach()
     }
 
     private fun windowParams(name: String, width: Int, height: Int) = WindowManager.LayoutParams(

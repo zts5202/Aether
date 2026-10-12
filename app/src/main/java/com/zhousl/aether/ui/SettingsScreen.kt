@@ -407,6 +407,7 @@ fun SettingsScreen(
     isAuthorizingVirtualDisplay: Boolean,
     onSaveAgentModeDisplayOrientation: (AgentModeDisplayOrientation) -> Unit,
     onSavePhoneUseOptions: (PhoneUseInputStrategy, PhoneUseOutputStrategy, Boolean) -> Unit,
+    onSavePhoneUseVisualFeedback: (Boolean, Boolean) -> Unit,
     onDisableVirtualDisplay: () -> Unit,
     onAuthorizeVirtualDisplay: (AgentModeAuthorizationMethod) -> Unit,
     onCancelVirtualDisplayAuthorization: () -> Unit,
@@ -1164,6 +1165,7 @@ fun SettingsScreen(
                     onSaveAgentModeAuthorization(it, phoneUseSettings.agentModeAuthorizationMethod)
                 },
                 onOptionsChanged = onSavePhoneUseOptions,
+                onVisualFeedbackChanged = onSavePhoneUseVisualFeedback,
                 onDisplayOrientationChanged = onSaveAgentModeDisplayOrientation,
                 onVirtualDisplayChanged = { enabled ->
                     if (enabled) currentPage = SettingsPage.VirtualDisplayAuthorization.name
@@ -5672,6 +5674,7 @@ private fun PhoneUseSettingsPage(
     onDisplayOrientationChanged: (AgentModeDisplayOrientation) -> Unit,
     onEnabledChanged: (Boolean) -> Unit,
     onOptionsChanged: (PhoneUseInputStrategy, PhoneUseOutputStrategy, Boolean) -> Unit,
+    onVisualFeedbackChanged: (Boolean, Boolean) -> Unit,
     onVirtualDisplayChanged: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -5721,6 +5724,35 @@ private fun PhoneUseSettingsPage(
                     title = stringResource(R.string.phone_use_allow_strategy_switch), subtitle = "",
                     checked = settings.phoneUseAllowStrategySwitch,
                     onCheckedChange = { onOptionsChanged(settings.phoneUseInputStrategy, settings.phoneUseOutputStrategy, it) },
+                )
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = stringResource(R.string.phone_use_visual_feedback),
+            style = MaterialTheme.typography.labelLarge,
+            color = AetherOnSurface,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        SettingsCardGroup {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                SettingsToggleRow(
+                    verticalAlignment = Alignment.CenterVertically,
+                    title = stringResource(R.string.phone_use_show_commentary),
+                    subtitle = stringResource(R.string.phone_use_show_commentary_description),
+                    checked = settings.phoneUseShowCommentary,
+                    onCheckedChange = { onVisualFeedbackChanged(it, settings.phoneUseShowEdgeGlow) },
+                )
+            }
+            CardDivider()
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                SettingsToggleRow(
+                    verticalAlignment = Alignment.CenterVertically,
+                    title = stringResource(R.string.phone_use_show_edge_glow),
+                    subtitle = stringResource(R.string.phone_use_show_edge_glow_description),
+                    checked = settings.phoneUseShowEdgeGlow,
+                    onCheckedChange = { onVisualFeedbackChanged(settings.phoneUseShowCommentary, it) },
                 )
             }
         }

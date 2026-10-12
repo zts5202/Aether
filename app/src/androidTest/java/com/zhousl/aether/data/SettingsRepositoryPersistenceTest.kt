@@ -49,6 +49,8 @@ class SettingsRepositoryPersistenceTest {
             alpineEnvironmentVariables = listOf(AlpineEnvironmentVariable("C", "D")),
             agentModeAuthorizationEnabled = true,
             agentModeAuthorizationMethod = AgentModeAuthorizationMethod.Root,
+            phoneUseShowCommentary = false,
+            phoneUseShowEdgeGlow = false,
             language = AppLanguage.SimplifiedChinese,
             themeMode = AppThemeMode.Dark,
             defaultChatModelKey = "provider:chat",
@@ -129,6 +131,7 @@ class SettingsRepositoryPersistenceTest {
             settings.agentModeAuthorizationEnabled,
             settings.agentModeAuthorizationMethod,
         )
+        updatePhoneUseVisualFeedback(settings.phoneUseShowCommentary, settings.phoneUseShowEdgeGlow)
         updateDefaultModelKeys(
             settings.defaultChatModelKey,
             settings.defaultTitleModelKey,

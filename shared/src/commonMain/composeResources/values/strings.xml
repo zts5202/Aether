@@ -1070,6 +1070,11 @@
     <string name="phone_use_element_first">Element operations first</string>
     <string name="phone_use_gesture_first">Coordinate gestures first</string>
     <string name="phone_use_allow_strategy_switch">Allow Agent to switch to the alternative strategy</string>
+    <string name="phone_use_visual_feedback">Visual feedback</string>
+    <string name="phone_use_show_commentary">Thinking bubble</string>
+    <string name="phone_use_show_commentary_description">Show progress and thinking notes on the right</string>
+    <string name="phone_use_show_edge_glow">Edge glow</string>
+    <string name="phone_use_show_edge_glow_description">Show the colorful glow around the screen</string>
     <string name="phone_use_virtual_enabled">Enable Virtual Display (experimental)</string>
     <string name="phone_use_virtual_grant">Choose an authorization method for Virtual Display.</string>
     <string name="phone_use_authorizing">Authorizing…</string>

@@ -9,6 +9,8 @@ internal data class PhoneUseOverlayState(
     val runId: Long,
     val commentaryId: String = "",
     val commentary: String = "",
+    val showCommentary: Boolean = true,
+    val showEdgeGlow: Boolean = true,
 )
 
 internal fun foregroundPhoneUseOverlay(
@@ -23,6 +25,8 @@ internal fun foregroundPhoneUseOverlay(
         active.activeTurnStartedAtMillis ?: return null,
         active.phoneUseCommentary?.id.orEmpty(),
         active.phoneUseCommentary?.text.orEmpty(),
+        showCommentary = settings.phoneUseShowCommentary,
+        showEdgeGlow = settings.phoneUseShowEdgeGlow,
     )
 }
 

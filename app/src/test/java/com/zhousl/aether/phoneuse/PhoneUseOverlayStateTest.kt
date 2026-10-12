@@ -30,6 +30,23 @@ class PhoneUseOverlayStateTest {
         assertEquals("已经打开。", next.commentary)
     }
 
+    @Test fun visualFeedbackFlagsDefaultOnAndFollowSettingsWithoutStoppingTheRun() {
+        val shown = foregroundPhoneUseOverlay(settings, listOf(running))!!
+        assertTrue(shown.showCommentary)
+        assertTrue(shown.showEdgeGlow)
+        val bubbleOff = foregroundPhoneUseOverlay(settings.copy(phoneUseShowCommentary = false), listOf(running))!!
+        assertFalse(bubbleOff.showCommentary)
+        assertTrue(bubbleOff.showEdgeGlow)
+        assertEquals(running.sessionId, bubbleOff.sessionId)
+        val bothOff = foregroundPhoneUseOverlay(
+            settings.copy(phoneUseShowCommentary = false, phoneUseShowEdgeGlow = false),
+            listOf(running),
+        )!!
+        assertFalse(bothOff.showCommentary)
+        assertFalse(bothOff.showEdgeGlow)
+        assertEquals(100L, bothOff.runId)
+    }
+
     @Test fun stopDisabledPreferenceAndVirtualDisplayRemoveFeedback() {
         assertNull(foregroundPhoneUseOverlay(settings, listOf(running.copy(isRunning = false))))
         assertNull(foregroundPhoneUseOverlay(settings.copy(agentModeAuthorizationEnabled = false), listOf(running)))

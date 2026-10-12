@@ -50,6 +50,30 @@ class PhoneUseOverlayControllerTest {
         } finally { controller.dispose(); service.onDestroy() }
     }
 
+    @Test fun visualFeedbackFlagsOmitTheDisabledWindows() {
+        val service = Robolectric.buildService(PhoneUseAccessibilityService::class.java).create().get()
+        val controller = PhoneUseOverlayController(service) { _, _ -> false }
+        try {
+            controller.update(state.copy(showCommentary = false, showEdgeGlow = true), true)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(32))
+            assertTrue(field<View>(controller, "edge").isAttachedToWindow)
+            assertNull(field<View?>(controller, "capsule"))
+            assertNull(controller.touchBounds())
+
+            controller.update(state.copy(showCommentary = true, showEdgeGlow = false), true)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(32))
+            assertNull(field<View?>(controller, "edge"))
+            val capsule = field<View>(controller, "capsule")
+            assertTrue(capsule.isAttachedToWindow)
+            assertNotNull(field<View?>(controller, "commentary"))
+
+            controller.update(state.copy(showCommentary = false, showEdgeGlow = false), true)
+            assertNull(field<View?>(controller, "edge"))
+            assertNull(field<View?>(controller, "capsule"))
+            assertNull(controller.touchBounds())
+        } finally { controller.dispose(); service.onDestroy() }
+    }
+
     @Test fun doubleTapSteerUsesTheOriginalSessionAndDoesNotOpenAnActivity() {
         val service = Robolectric.buildService(PhoneUseAccessibilityService::class.java).create().get()
         var submitted: Pair<PhoneUseOverlayState, String>? = null
