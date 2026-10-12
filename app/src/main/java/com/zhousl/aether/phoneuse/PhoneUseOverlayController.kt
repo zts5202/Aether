@@ -2,6 +2,8 @@ package com.zhousl.aether.phoneuse
 
 import android.accessibilityservice.AccessibilityService
 import android.animation.ValueAnimator
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.RenderEffect
@@ -404,6 +406,70 @@ internal class PhoneUseOverlayController(
         if (Build.VERSION.SDK_INT >= 30) setFitInsetsTypes(0)
         // FLAG_BLUR_BEHIND / blurBehindRadius blur the whole app behind an accessibility
         // overlay. The chip's frosted look is only the translucent fill in PhoneUseCapsuleLayout.
+    }
+
+    /** Right-edge chip rectangle, so a Send tap can miss it. Null when the chip is hidden. */
+    fun touchBounds(): Rect? {
+        if (!visible || disposed) return null
+        val params = capsuleParams ?: return null
+        val host = capsule ?: return null
+        if (host.visibility != View.VISIBLE) return null
+        val width = when {
+            params.width > 0 -> params.width
+            host.width > 0 -> host.width
+            else -> return null
+        }
+        val height = when {
+            host.height > 0 -> host.height
+            params.height > 0 -> params.height
+            else -> return null
+        }
+        return Rect(params.x, params.y, params.x + width, params.y + height)
+    }
+
+    /**
+     * HyperOS drops clipboard writes from a background app. A focused accessibility
+     * field can copy, then this window is removed before the WeChat gesture.
+     */
+    fun copyToClipboard(text: String): Boolean {
+        if (text.isEmpty() || disposed) return false
+        val manager = service.getSystemService(ClipboardManager::class.java) ?: return false
+        val edit = EditText(service).apply {
+            setText(text)
+            setSelection(0, text.length)
+            alpha = 0f
+            isFocusable = true
+            isFocusableInTouchMode = true
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        val params = WindowManager.LayoutParams(
+            1,
+            1,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.LEFT
+            x = 0
+            y = 0
+            title = "$WINDOW_PREFIX clipboard"
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
+            if (Build.VERSION.SDK_INT >= 28) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        return try {
+            wm.addView(edit, params)
+            edit.requestFocus()
+            edit.setSelection(0, text.length)
+            edit.onTextContextMenuItem(android.R.id.copy)
+            manager.setPrimaryClip(ClipData.newPlainText("aether-phone-use", text))
+            true
+        } catch (_: RuntimeException) {
+            false
+        } finally {
+            if (edit.parent != null) runCatching { wm.removeViewImmediate(edit) }
+        }
     }
 
     /** Hide feedback for a display screenshot without losing the Steer draft or window focus. */

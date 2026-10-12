@@ -264,18 +264,30 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
                         )
                     }
                     put("duration_ms", integerProperty("For swipe: gesture duration in milliseconds (50..10000)."))
-                    put("key", stringProperty("For key: BACK, HOME, RECENTS, NOTIFICATIONS, QUICK_SETTINGS (foreground only), or ENTER."))
+                    put("key", stringProperty(
+                        "For key: BACK, HOME, RECENTS, NOTIFICATIONS, QUICK_SETTINGS (foreground only), or ENTER. " +
+                            "On WeChat, ENTER sends a draft that text already verified: KEYCODE_ENTER first, then the Send button, avoiding the right-edge overlay. " +
+                            "Pass the same text so the bubble can be checked. Never claim the message was sent unless sent is true."
+                    ))
                     put(
                         "text",
                         stringProperty(
                             "For text/fill_text on WeChat (com.tencent.mm) or an empty tree with no editable node: this is the only input path. " +
-                                "It writes the full string to the clipboard, then ACTION_SET_TEXT and ACTION_PASTE, taps the field to show the keyboard, long-presses it, and taps 粘贴. " +
-                                "A system Ctrl+V or KEYCODE_PASTE shortcut is used when the device supports it. " +
-                                "Optional x,y (normalized 0..1000) is the input field when no editable node exists. " +
+                                "It writes the full string to the clipboard, focuses the bottom input bar, dismisses or avoids com.tencent.wetype when it covers 粘贴, long-presses, and taps 粘贴. " +
+                                "If there is no tree, the host uses bottom input-bar coordinates. Optional x,y (normalized 0..1000) is that field. " +
                                 "Do not type pinyin key by key, do not tap IME keys, and do not ask the user to type, paste, or send. " +
-                                "A missing Editable node or \"Focused field rejected text\" must not stop the action; the host continues with clipboard paste. " +
-                                "Success requires text_verified after readback or a screenshot of the target text. If text_verified is false, repeat the Chinese reflection verbatim. " +
+                                "Do not tell the user to switch input methods unless the reflection says the clipboard itself is unavailable. " +
+                                "A missing Editable node or \"Focused field rejected text\" must not stop the action; the host continues with clipboard paste and retries another long-press point. " +
+                                "Success requires text_verified after readback or a screenshot of the target text. If text_verified is false, repeat the Chinese reflection verbatim and do not claim the message was sent. " +
                                 "Empty text clears by selecting all. Outside WeChat, text replaces an editable node_id or the focused field. Unicode is supported.",
+                        ),
+                    )
+                    put(
+                        "send",
+                        booleanProperty(
+                            "For text/fill_text on a WeChat chat: after the paste is verified, send it. " +
+                                "The host tries KEYCODE_ENTER first, then taps Send while avoiding the right-edge overlay. " +
+                                "sent is true only when a chat bubble shows the text. Omit or false to fill without sending.",
                         ),
                     )
                 },
