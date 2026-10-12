@@ -154,7 +154,7 @@ internal class PhoneUseOverlayController(
         val edgeParams = windowParams("$WINDOW_PREFIX edge", -1, -1).apply {
             flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
-        val cardParams = windowParams("$WINDOW_PREFIX commentary", commentaryWidth(), -2, blurBehind = true)
+        val cardParams = windowParams("$WINDOW_PREFIX commentary", commentaryWidth(), -2)
         try {
             wm.addView(edgeView, edgeParams)
             wm.addView(host, cardParams)
@@ -391,7 +391,7 @@ internal class PhoneUseOverlayController(
         handler.postDelayed({ if (!visible && generation == token) detach() }, motionDuration(230))
     }
 
-    private fun windowParams(name: String, width: Int, height: Int, blurBehind: Boolean = false) = WindowManager.LayoutParams(
+    private fun windowParams(name: String, width: Int, height: Int) = WindowManager.LayoutParams(
         width, height, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
@@ -402,10 +402,8 @@ internal class PhoneUseOverlayController(
         softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         if (Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         if (Build.VERSION.SDK_INT >= 30) setFitInsetsTypes(0)
-        if (blurBehind && Build.VERSION.SDK_INT >= 31) {
-            flags = flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
-            blurBehindRadius = dp(24)
-        }
+        // FLAG_BLUR_BEHIND / blurBehindRadius blur the whole app behind an accessibility
+        // overlay. The chip's frosted look is only the translucent fill in PhoneUseCapsuleLayout.
     }
 
     /** Hide feedback for a display screenshot without losing the Steer draft or window focus. */

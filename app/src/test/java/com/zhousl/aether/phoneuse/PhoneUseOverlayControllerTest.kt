@@ -196,7 +196,7 @@ class PhoneUseOverlayControllerTest {
         } finally { controller.dispose(); service.onDestroy() }
     }
 
-    @Test @Config(sdk = [31]) fun commentaryWindowBlursWhatIsBehindIt() {
+    @Test @Config(sdk = [31]) fun commentaryWindowDoesNotBlurTheScreenBehindIt() {
         val service = Robolectric.buildService(PhoneUseAccessibilityService::class.java).create().get()
         val controller = PhoneUseOverlayController(service) { _, _ -> false }
         try {
@@ -206,9 +206,10 @@ class PhoneUseOverlayControllerTest {
             val edge = field<View>(controller, "edge")
             val params = host.layoutParams as WindowManager.LayoutParams
             val edgeParams = edge.layoutParams as WindowManager.LayoutParams
-            assertTrue(params.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND != 0)
-            assertTrue(params.blurBehindRadius > 0)
+            assertEquals(0, params.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            assertEquals(0, params.blurBehindRadius)
             assertEquals(0, edgeParams.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            assertEquals(0, edgeParams.blurBehindRadius)
         } finally { controller.dispose(); service.onDestroy() }
     }
 
