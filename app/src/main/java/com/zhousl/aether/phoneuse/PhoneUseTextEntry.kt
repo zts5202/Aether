@@ -10,10 +10,12 @@ import android.text.TextPaint
 import kotlin.math.roundToInt
 
 internal const val WeChatPackageName = "com.tencent.mm"
+internal const val WeTypePackageName = "com.tencent.wetype"
 
 internal val PasteLabels = listOf("粘贴", "Paste", "貼上")
 internal val SelectAllLabels = listOf("全选", "Select all", "Select All")
 internal val CutLabels = listOf("剪切", "Cut", "剪切文字")
+internal val SendLabels = listOf("发送", "Send", "傳送")
 
 internal fun normalizePhoneUseAction(action: String): String = when (action) {
     "fill_text", "filltext" -> "text"
@@ -22,6 +24,9 @@ internal fun normalizePhoneUseAction(action: String): String = when (action) {
 
 internal fun isWeChatPackage(packageName: String?): Boolean =
     packageName?.substringBefore('/')?.trim() == WeChatPackageName
+
+internal fun isWeTypePackage(packageName: String?): Boolean =
+    packageName?.substringBefore('/')?.trim() == WeTypePackageName
 
 /** Window titles often look like `com.tencent.mm/.ui.LauncherUI` while the root package is blank or the IME. */
 internal fun mentionsWeChat(packageName: String?, title: CharSequence?): Boolean {
@@ -75,6 +80,97 @@ internal fun inputLongPressPoints(
         aboveKeys?.let { clamp(anchorX, it) },
         clamp(left, anchorY),
     ).distinct()
+}
+
+/** Bottom composer row: left of the send button, above a normal keyboard or the gesture inset. */
+internal fun bottomInputBarPoint(
+    screenWidth: Int,
+    screenHeight: Int,
+    density: Float,
+    keyboardTop: Int?,
+): Pair<Int, Int> {
+    if (screenWidth <= 0 || screenHeight <= 0) return 0 to 0
+    val safeDensity = density.coerceAtLeast(1f)
+    val x = (screenWidth * 0.42f).roundToInt().coerceIn(0, screenWidth - 1)
+    val normalTop = keyboardTop?.takeIf { it > (screenHeight * 0.45f).roundToInt() }
+    val y = if (normalTop != null) {
+        (normalTop - 32f * safeDensity).roundToInt()
+    } else {
+        (screenHeight - 64f * safeDensity).roundToInt()
+    }
+    val ceiling = ((normalTop ?: screenHeight) - 1).coerceIn(0, screenHeight - 1)
+    return x to y.coerceIn(0, ceiling)
+}
+
+/** True when the long-press edit menu would land inside the IME, including com.tencent.wetype. */
+internal fun keyboardCoversPasteTarget(anchorX: Int, anchorY: Int, keyboard: Rect?, density: Float): Boolean {
+    if (keyboard == null || keyboard.isEmpty) return false
+    if (keyboard.contains(anchorX, anchorY)) return true
+    val menu = pasteMenuRegion(
+        anchorX,
+        anchorY,
+        screenWidth = keyboard.right.coerceAtLeast(anchorX + 1),
+        screenHeight = keyboard.bottom.coerceAtLeast(anchorY + 1),
+        density = density,
+    )
+    return Rect.intersects(menu, keyboard)
+}
+
+/** Anchor first, then other points on the input row. Callers retry when the first paste does not verify. */
+internal fun weChatInputPressPoints(
+    anchorX: Int,
+    anchorY: Int,
+    density: Float,
+    screenWidth: Int,
+    screenHeight: Int,
+    keyboardTop: Int?,
+): List<Pair<Int, Int>> {
+    if (screenWidth <= 0 || screenHeight <= 0) return emptyList()
+    val bar = bottomInputBarPoint(screenWidth, screenHeight, density, keyboardTop)
+    val safeDensity = density.coerceAtLeast(1f)
+    val ceiling = ((keyboardTop?.takeIf { it > (screenHeight * 0.45f).roundToInt() } ?: screenHeight) - 1)
+        .coerceIn(0, screenHeight - 1)
+    fun clamp(x: Int, y: Int) = x.coerceIn(0, screenWidth - 1) to y.coerceIn(0, ceiling)
+    return (
+        listOf(
+            clamp(anchorX, anchorY),
+            bar,
+            clamp((screenWidth * 0.30f).roundToInt(), bar.second),
+            clamp((screenWidth * 0.55f).roundToInt(), (bar.second - 16f * safeDensity).roundToInt()),
+        ) + inputLongPressPoints(anchorX, anchorY, density, screenWidth, screenHeight, keyboardTop)
+    ).distinct()
+}
+
+/** Right side of the input row. Shifts left when that point sits on the commentary chip. */
+internal fun sendButtonPoint(
+    inputY: Int,
+    screenWidth: Int,
+    screenHeight: Int,
+    density: Float,
+    keyboardTop: Int?,
+    overlay: Rect?,
+): Pair<Int, Int>? {
+    if (screenWidth <= 0 || screenHeight <= 0) return null
+    val safeDensity = density.coerceAtLeast(1f)
+    val normalTop = keyboardTop?.takeIf { it > (screenHeight * 0.45f).roundToInt() }
+    val ceiling = ((normalTop ?: screenHeight) - 1).coerceIn(0, screenHeight - 1)
+    val y = inputY.coerceIn(0, ceiling)
+    var x = (screenWidth - 40f * safeDensity).roundToInt().coerceIn(0, screenWidth - 1)
+    if (overlay != null && overlay.contains(x, y)) {
+        x = (overlay.left - (16f * safeDensity).roundToInt()).coerceIn(0, screenWidth - 1)
+        if (overlay.contains(x, y)) return null
+    }
+    if (normalTop != null && y >= normalTop) return null
+    return x to y
+}
+
+/** Newest chat bubble sits just above the composer, not inside the input line. */
+internal fun chatBubbleRegion(inputY: Int, screenWidth: Int, screenHeight: Int, density: Float): Rect {
+    val safeDensity = density.coerceAtLeast(1f)
+    val height = screenHeight.coerceAtLeast(1)
+    val bottom = (inputY - (8f * safeDensity).roundToInt()).coerceIn(1, height)
+    val top = (bottom - (180f * safeDensity).roundToInt()).coerceAtLeast(0)
+    return Rect(0, top, screenWidth.coerceAtLeast(1), bottom.coerceAtLeast(top + 1).coerceAtMost(height))
 }
 
 internal fun pasteTapCandidates(
@@ -135,6 +231,7 @@ internal fun textEntryReflection(
     attempts: List<String>,
     weChat: Boolean,
     emptyTree: Boolean,
+    clipboardUnavailable: Boolean = false,
 ): String {
     val scene = buildList {
         if (weChat) add("微信 com.tencent.mm")
@@ -147,11 +244,26 @@ internal fun textEntryReflection(
         appendLine("场景：$scene。")
         appendLine("目标：$target")
         appendLine("已尝试：${attempts.joinToString("；").ifBlank { "无" }}。")
-        appendLine("校验：无障碍树和截图都没有确认目标文字。未校验不得当作成功。")
-        appendLine("请继续只调用 text，把完整目标文字交给剪贴板粘贴。清空请发送空文字。")
-        appendLine("不要点软键盘退格，也不要请用户手动粘贴。")
-        appendLine("不要逐键打拼音，不要点输入法按键，也不要请用户手动打字或发送。")
-        append("若剪贴板粘贴、长按「粘贴」和系统粘贴快捷键都失败，再提示切换到可以提交文字的输入法后重试。")
+        appendLine("校验：无障碍树和截图都没有确认目标文字。未校验不得当作成功，也不得声称已发送。")
+        if (clipboardUnavailable) {
+            append("剪贴板不可用，所以无法粘贴。只有剪贴板本身不可用时，才可以提示检查输入法是否拦截了剪贴板。不要请用户手动打字或发送。")
+        } else {
+            appendLine("请继续只调用 text，把完整目标文字交给剪贴板粘贴。清空请发送空文字。")
+            appendLine("不要点软键盘退格，也不要请用户手动粘贴。")
+            appendLine("不要逐键打拼音，不要点输入法按键，也不要请用户手动打字或发送。")
+            append("不要换输入法。未校验到目标文字不得当作已输入或已发送。")
+        }
+    }
+}
+
+internal fun sendNotVerifiedReflection(text: String, attempts: List<String>): String {
+    val target = if (text.isEmpty()) "目标文字" else "「${text.take(40)}」"
+    return buildString {
+        appendLine("输入框里的${target}已经通过校验，但没有在聊天气泡里确认发出。")
+        appendLine("已尝试：${attempts.joinToString("；").ifBlank { "无" }}。")
+        appendLine("不要再粘贴第二份，除非输入框里已经没有这段文字。")
+        appendLine("请再调用一次 key=ENTER，并带上同一段 text。宿主会先发 KEYCODE_ENTER，不行再点输入栏右侧的发送，并避开右侧思考条。")
+        append("不要换输入法，不要逐键拼音，不要请用户打字或发送，也不要声称消息已经发出。")
     }
 }
 
@@ -170,6 +282,8 @@ internal data class TextEntryOutcome(
     val reflection: String,
     val weChat: Boolean,
     val emptyTree: Boolean,
+    val sent: Boolean = false,
+    val sentBy: String = "",
 )
 
 internal interface PhoneUseTextHost {
@@ -192,6 +306,19 @@ internal interface PhoneUseTextHost {
     suspend fun longPress(x: Int, y: Int)
     /** Ctrl+V / KEYCODE_PASTE when the device allows it. False when the system has no such injection. */
     suspend fun trySystemPasteShortcut(): Boolean = false
+    fun keyboardBounds(): Rect? = keyboardTop()?.let { top ->
+        if (screenWidth <= 0 || screenHeight <= 0) return null
+        val safeTop = top.coerceIn(0, screenHeight)
+        if (safeTop >= screenHeight) null else Rect(0, safeTop, screenWidth, screenHeight)
+    }
+    fun keyboardPackage(): String? = null
+    /** BACK only while an IME or WeChat keyboard is actually showing. */
+    suspend fun dismissKeyboard(): Boolean = false
+    fun overlayBounds(): Rect? = null
+    /** KEYCODE_ENTER (66). False when the device rejects key injection. */
+    suspend fun tryKeycodeEnter(): Boolean = false
+    /** Non-editable on-screen text that already shows the message, such as a chat bubble. */
+    fun bubbleContains(text: String): Boolean = false
     suspend fun capture(): Bitmap?
 }
 
@@ -199,38 +326,69 @@ internal class PhoneUseTextEntry(
     private val host: PhoneUseTextHost,
     private val glyphs: PhoneUseGlyphLocator = PhoneUseGlyphLocator(),
 ) {
-    suspend fun enter(text: String): TextEntryOutcome {
+    suspend fun enter(text: String, sendAfterVerify: Boolean = false): TextEntryOutcome {
         lastRequestedText = text
         val attempts = mutableListOf<String>()
         if (text.isNotEmpty()) {
-            runCatching { host.writeClipboard(text) }
-                .onFailure { attempts += "写入剪贴板失败" }
+            val wrote = runCatching { host.writeClipboard(text) }.isSuccess
+            if (!wrote) {
+                attempts += "写入剪贴板失败"
+                return failure(attempts, clipboardUnavailable = true)
+            }
         }
         val before = host.fieldText()
-        if (text.isEmpty()) {
-            clearByNodes(before, attempts)?.let { return success(it, "tree", attempts) }
+        val filled = if (text.isEmpty()) {
+            clearByNodes(before, attempts)?.let { success(it, "tree", attempts) }
+                ?: gestureEntry(text, before, attempts)
         } else {
-            replaceByNodes(text, before, attempts)?.let { return success(it, "tree", attempts) }
+            replaceByNodes(text, before, attempts)?.let { success(it, "tree", attempts) }
+                ?: gestureEntry(text, before, attempts)
         }
-        return gestureEntry(text, before, attempts)
+        if (!sendAfterVerify || text.isEmpty() || !filled.verified) return filled
+        return sendVerified(filled, text)
+    }
+
+    /** Send a draft that was already verified. Does not paste again. */
+    suspend fun sendOnly(expected: String): TextEntryOutcome {
+        val sample = expected.trim().ifBlank { host.fieldText()?.trim().orEmpty() }
+        val attempts = mutableListOf("校验通过后才发送")
+        if (sample.isEmpty()) {
+            attempts += "没有可核对的目标文字"
+            return TextEntryOutcome(
+                verified = false,
+                method = "",
+                verifiedBy = "",
+                attempts = attempts,
+                reflection = sendNotVerifiedReflection(sample, attempts),
+                weChat = host.weChat,
+                emptyTree = host.emptyTree,
+            )
+        }
+        return sendVerified(success("already_verified", "caller", attempts), sample)
     }
 
     private fun success(method: String, verifiedBy: String, attempts: List<String>) = TextEntryOutcome(
         verified = true,
         method = method,
         verifiedBy = verifiedBy,
-        attempts = attempts,
+        attempts = attempts.toList(),
         reflection = "",
         weChat = host.weChat,
         emptyTree = host.emptyTree,
     )
 
-    private fun failure(attempts: List<String>) = TextEntryOutcome(
+    private fun failure(attempts: List<String>, clipboardUnavailable: Boolean = false) = TextEntryOutcome(
         verified = false,
         method = "",
         verifiedBy = "",
-        attempts = attempts,
-        reflection = textEntryReflection(lastRequestedText, attempts, host.weChat, host.emptyTree),
+        attempts = attempts.toList(),
+        reflection = textEntryReflection(
+            lastRequestedText,
+            attempts,
+            host.weChat,
+            host.emptyTree,
+            clipboardUnavailable,
+        ),
         weChat = host.weChat,
         emptyTree = host.emptyTree,
     )
@@ -278,69 +436,112 @@ internal class PhoneUseTextEntry(
     }
 
     private suspend fun gestureEntry(text: String, before: String?, attempts: MutableList<String>): TextEntryOutcome {
-        val initial = host.anchor()
         val beforeShot = host.capture()
         try {
-            host.tap(initial.first, initial.second)
-            kotlinx.coroutines.delay(420)
-            attempts += "已点输入框以弹出键盘"
-            val anchor = host.anchor()
-            val region = inputVerifyRegion(anchor.first, anchor.second, host.screenWidth, host.screenHeight, host.density)
-            val presses = inputLongPressPoints(
-                anchor.first, anchor.second, host.density, host.screenWidth, host.screenHeight, host.keyboardTop(),
-            ).ifEmpty { listOf(anchor) }
-            var menuAnchor = anchor
-            var foundMenu = false
-            for (point in presses) {
-                host.longPress(point.first, point.second)
-                kotlinx.coroutines.delay(640)
-                menuAnchor = point
-                val shot = host.capture()
-                val paste = locate(PasteLabels, "粘贴", point, shot)
-                val select = if (text.isEmpty() || !before.isNullOrEmpty()) locate(SelectAllLabels, "全选", point, shot) else null
-                val cut = if (text.isEmpty()) locate(CutLabels, "剪切", point, shot) else null
-                shot?.recycle()
-                if (paste != null || select != null || cut != null) {
-                    foundMenu = true
-                    break
-                }
+            return if (text.isEmpty()) gestureClear(before, beforeShot, attempts) else gesturePaste(text, before, beforeShot, attempts)
+        } finally {
+            beforeShot?.recycle()
+        }
+    }
+
+    private suspend fun gestureClear(before: String?, beforeShot: Bitmap?, attempts: MutableList<String>): TextEntryOutcome {
+        val point = focusComposer(attempts)
+        val region = inputVerifyRegion(point.first, point.second, host.screenWidth, host.screenHeight, host.density)
+        host.longPress(point.first, point.second)
+        kotlinx.coroutines.delay(640)
+        locate(SelectAllLabels, "全选", point)?.takeIf { usable(it) }?.let { select ->
+            host.tap(select.first, select.second)
+            kotlinx.coroutines.delay(240)
+            attempts += "已点「全选」"
+            host.longPress(point.first, point.second)
+            kotlinx.coroutines.delay(480)
+        }
+        val cut = locate(CutLabels, "剪切", point)?.takeIf { usable(it) }
+        if (cut == null) {
+            attempts += "长按菜单里没有找到「剪切」"
+            return failure(attempts)
+        }
+        host.tap(cut.first, cut.second)
+        kotlinx.coroutines.delay(280)
+        attempts += "已点「剪切」"
+        val via = confirm("", before, beforeShot, region)
+        if (via != null) return success("gesture_cut", via, attempts)
+        attempts += "剪切后树和截图都没有确认输入框已空"
+        return failure(attempts)
+    }
+
+    private suspend fun gesturePaste(
+        text: String,
+        before: String?,
+        beforeShot: Bitmap?,
+        attempts: MutableList<String>,
+    ): TextEntryOutcome {
+        var region = inputVerifyRegion(
+            host.anchor().first, host.anchor().second, host.screenWidth, host.screenHeight, host.density,
+        )
+        val tried = mutableListOf<Pair<Int, Int>>()
+        repeat(3) { index ->
+            if (!runCatching { host.writeClipboard(text) }.isSuccess) {
+                attempts += "写入剪贴板失败"
+                return failure(attempts, clipboardUnavailable = true)
             }
-            attempts += if (foundMenu) "长按后出现了编辑菜单" else "已长按输入位置，菜单未出现"
-            if (text.isEmpty() || !before.isNullOrEmpty()) {
-                locate(SelectAllLabels, "全选", menuAnchor)?.let { point ->
-                    host.tap(point.first, point.second)
+            val candidates = weChatInputPressPoints(
+                host.anchor().first,
+                host.anchor().second,
+                host.density,
+                host.screenWidth,
+                host.screenHeight,
+                host.keyboardBounds()?.top,
+            )
+            val raw = candidates.firstOrNull { it !in tried } ?: host.anchor()
+            tried += raw
+            var point = avoidCoveringKeyboard(if (index == 0) host.anchor() else raw, attempts)
+            if (index == 0) {
+                host.tap(point.first, point.second)
+                kotlinx.coroutines.delay(420)
+                attempts += "已点输入栏以取得焦点"
+                point = avoidCoveringKeyboard(host.anchor(), attempts)
+                region = inputVerifyRegion(point.first, point.second, host.screenWidth, host.screenHeight, host.density)
+            }
+            val keyboard = host.keyboardBounds()
+            if (keyboardCoversPasteTarget(point.first, point.second, keyboard, host.density)) {
+                point = liftAboveKeyboard(point, keyboard)
+            }
+            host.longPress(point.first, point.second)
+            kotlinx.coroutines.delay(640)
+            if (!host.fieldText().isNullOrEmpty()) {
+                locate(SelectAllLabels, "全选", point)?.takeIf { usable(it) }?.let { select ->
+                    host.tap(select.first, select.second)
                     kotlinx.coroutines.delay(240)
                     attempts += "已点「全选」"
-                    host.longPress(menuAnchor.first, menuAnchor.second)
+                    host.longPress(point.first, point.second)
                     kotlinx.coroutines.delay(480)
                 }
             }
-            if (text.isEmpty()) {
-                val cut = locate(CutLabels, "剪切", menuAnchor)
-                if (cut == null) {
-                    attempts += "长按菜单里没有找到「剪切」"
-                    return failure(attempts)
+            var located = locate(PasteLabels, "粘贴", point)?.takeIf { usable(it) }
+            if (located == null && host.keyboardBounds() != null) {
+                val dismissed = runCatching { host.dismissKeyboard() }.getOrDefault(false)
+                if (dismissed) {
+                    attempts += "粘贴目标被输入法挡住，已收起后重新长按"
+                    point = host.anchor()
+                    host.longPress(point.first, point.second)
+                    kotlinx.coroutines.delay(480)
+                    located = locate(PasteLabels, "粘贴", point)?.takeIf { usable(it) }
                 }
-                host.tap(cut.first, cut.second)
-                kotlinx.coroutines.delay(280)
-                attempts += "已点「剪切」"
-                val via = confirm(text, before, beforeShot, region)
-                if (via != null) return success("gesture_cut", via, attempts)
-                attempts += "剪切后树和截图都没有确认输入框已空"
-                return failure(attempts)
             }
-            runCatching { host.writeClipboard(text) }
-            val located = locate(PasteLabels, "粘贴", menuAnchor)
-            if (located == null) attempts += "树和截图都没有「粘贴」，改为点长按位置上方的菜单坐标"
-            val points = buildList {
+            if (located == null) attempts += "第${index + 1}处长按后，没有落在输入法外面的「粘贴」"
+            val taps = buildList {
                 if (located != null) add(located)
                 pasteTapCandidates(
-                    menuAnchor.first, menuAnchor.second, host.density, host.screenWidth, host.screenHeight, host.keyboardTop(),
-                ).forEach { add(it) }
+                    point.first, point.second, host.density, host.screenWidth, host.screenHeight, host.keyboardBounds()?.top,
+                ).filter { usable(it) }.forEach { add(it) }
             }.distinct().take(3)
-            if (points.isEmpty()) attempts += "没有可点的「粘贴」位置"
-            for (point in points) {
-                host.tap(point.first, point.second)
+            if (taps.isEmpty()) {
+                attempts += "第${index + 1}处没有可点的「粘贴」位置"
+                return@repeat
+            }
+            for (tapPoint in taps) {
+                host.tap(tapPoint.first, tapPoint.second)
                 kotlinx.coroutines.delay(300)
                 val via = confirm(text, before, beforeShot, region)
                 if (via != null) {
@@ -348,23 +549,119 @@ internal class PhoneUseTextEntry(
                     return success("gesture_paste", via, attempts)
                 }
             }
-            if (points.isNotEmpty()) attempts += "点「粘贴」后，树和截图都没有出现目标文字"
-            val shortcut = runCatching { host.trySystemPasteShortcut() }.getOrDefault(false)
-            if (!shortcut) {
-                attempts += "系统不支持粘贴快捷键"
-            } else {
-                kotlinx.coroutines.delay(300)
-                val via = confirm(text, before, beforeShot, region)
-                if (via != null) {
-                    attempts += "已用系统粘贴快捷键并确认文字"
-                    return success("key_paste", via, attempts)
-                }
-                attempts += "系统粘贴快捷键没有通过校验"
-            }
-            return failure(attempts)
-        } finally {
-            beforeShot?.recycle()
+            attempts += "第${index + 1}次粘贴后，树和截图都没有出现目标文字"
         }
+        val shortcut = runCatching { host.trySystemPasteShortcut() }.getOrDefault(false)
+        if (!shortcut) {
+            attempts += "系统不支持粘贴快捷键"
+        } else {
+            kotlinx.coroutines.delay(300)
+            val via = confirm(text, before, beforeShot, region)
+            if (via != null) {
+                attempts += "已用系统粘贴快捷键并确认文字"
+                return success("key_paste", via, attempts)
+            }
+            attempts += "系统粘贴快捷键没有通过校验"
+        }
+        return failure(attempts)
+    }
+
+    private suspend fun focusComposer(attempts: MutableList<String>): Pair<Int, Int> {
+        val point = avoidCoveringKeyboard(host.anchor(), attempts)
+        host.tap(point.first, point.second)
+        kotlinx.coroutines.delay(420)
+        attempts += "已点输入栏以取得焦点"
+        return avoidCoveringKeyboard(host.anchor(), attempts)
+    }
+
+    private suspend fun avoidCoveringKeyboard(point: Pair<Int, Int>, attempts: MutableList<String>): Pair<Int, Int> {
+        val keyboard = host.keyboardBounds() ?: return point
+        val wetype = isWeTypePackage(host.keyboardPackage())
+        val covers = keyboardCoversPasteTarget(point.first, point.second, keyboard, host.density)
+        val hugeWeType = wetype && keyboard.height() > host.screenHeight / 2
+        if (!covers && !hugeWeType) return point
+        val dismissed = runCatching { host.dismissKeyboard() }.getOrDefault(false)
+        if (dismissed) {
+            attempts += "已收起挡住粘贴位置的输入法"
+            return host.anchor()
+        }
+        attempts += "输入法仍盖住粘贴位置，改为在键盘上方的输入栏操作"
+        return liftAboveKeyboard(point, host.keyboardBounds())
+    }
+
+    private fun liftAboveKeyboard(point: Pair<Int, Int>, keyboard: Rect?): Pair<Int, Int> {
+        if (keyboard == null || keyboard.isEmpty || host.screenWidth <= 0 || host.screenHeight <= 0) return point
+        val gap = (32f * host.density.coerceAtLeast(1f)).roundToInt()
+        val y = if (keyboard.top <= gap) point.second else minOf(point.second, keyboard.top - gap)
+        return point.first.coerceIn(0, host.screenWidth - 1) to y.coerceIn(0, host.screenHeight - 1)
+    }
+
+    private fun usable(point: Pair<Int, Int>): Boolean {
+        val keyboard = host.keyboardBounds()
+        if (keyboard != null && keyboard.contains(point.first, point.second)) return false
+        val overlay = host.overlayBounds()
+        if (overlay != null && overlay.contains(point.first, point.second)) return false
+        return true
+    }
+
+    private suspend fun sendVerified(filled: TextEntryOutcome, text: String): TextEntryOutcome {
+        val attempts = filled.attempts.toMutableList()
+        attempts += "文字已校验，开始发送"
+        val input = host.anchor()
+        val inputRegion = inputVerifyRegion(input.first, input.second, host.screenWidth, host.screenHeight, host.density)
+        val bubbleRegion = chatBubbleRegion(input.second, host.screenWidth, host.screenHeight, host.density)
+        val before = runCatching { host.capture() }.getOrNull()
+        try {
+            val dispatched = runCatching { host.tryKeycodeEnter() }.getOrDefault(false)
+            kotlinx.coroutines.delay(360)
+            if (confirmSent(text, inputRegion, bubbleRegion, before)) {
+                attempts += "KEYCODE_ENTER 后已在聊天气泡确认文字"
+                return filled.copy(
+                    method = "${filled.method}+enter",
+                    attempts = attempts.toList(),
+                    sent = true,
+                    sentBy = "keycode_enter",
+                    reflection = "",
+                )
+            }
+            attempts += if (dispatched) "KEYCODE_ENTER 已发出，但气泡里还没有目标文字" else "KEYCODE_ENTER 不可用"
+            val keyboard = host.keyboardBounds()
+            val labeled = host.labelCenter(SendLabels)?.takeIf { acceptableSendPoint(it, keyboard) }
+            val point = labeled ?: sendButtonPoint(
+                input.second,
+                host.screenWidth,
+                host.screenHeight,
+                host.density,
+                keyboard?.top,
+                host.overlayBounds(),
+            )?.takeIf { acceptableSendPoint(it, keyboard) }
+            if (point == null) {
+                attempts += "没有避开浮层和键盘的发送位置"
+                return filled.copy(attempts = attempts.toList(), sent = false, reflection = sendNotVerifiedReflection(text, attempts))
+            }
+            host.tap(point.first, point.second)
+            kotlinx.coroutines.delay(420)
+            if (confirmSent(text, inputRegion, bubbleRegion, before)) {
+                attempts += "已点发送并在气泡中确认文字"
+                return filled.copy(
+                    method = "${filled.method}+send",
+                    attempts = attempts.toList(),
+                    sent = true,
+                    sentBy = "send_button",
+                    reflection = "",
+                )
+            }
+            attempts += "点击发送后仍未在聊天气泡确认目标文字"
+            return filled.copy(attempts = attempts.toList(), sent = false, reflection = sendNotVerifiedReflection(text, attempts))
+        } finally {
+            before?.recycle()
+        }
+    }
+
+    private fun acceptableSendPoint(point: Pair<Int, Int>, keyboard: Rect?): Boolean {
+        if (!usable(point)) return false
+        if (keyboard != null && keyboard.contains(point.first, point.second)) return false
+        return point.second >= (host.screenHeight * 0.5f).roundToInt()
     }
 
     private suspend fun confirm(
@@ -382,6 +679,32 @@ internal class PhoneUseTextEntry(
         }
         if (expected.isEmpty() && !before.isNullOrEmpty() && screenshotCleared(before, beforeShot, region)) return "screenshot"
         return null
+    }
+
+    private suspend fun confirmSent(
+        expected: String,
+        inputRegion: Rect,
+        bubbleRegion: Rect,
+        beforeShot: Bitmap?,
+    ): Boolean {
+        val sample = expected.trim().take(12)
+        if (sample.isEmpty()) return false
+        val fieldHasDraft = host.fieldText()?.contains(sample) == true
+        val bubbleInTree = host.bubbleContains(expected) || host.bubbleContains(sample)
+        val shot = host.capture()
+        try {
+            val sizes = fieldSizes()
+            val inputHasDraft = shot != null && glyphs.find(shot, sample, inputRegion, sizes) != null
+            val bubbleNew = shot != null &&
+                glyphs.find(shot, sample, bubbleRegion, sizes) != null &&
+                (beforeShot == null || glyphs.find(beforeShot, sample, bubbleRegion, sizes) == null)
+            if (!(bubbleInTree || bubbleNew) || inputHasDraft) return false
+            // A stale editable node still reporting the draft does not count once the input image is clear.
+            if (fieldHasDraft && shot == null) return false
+            return true
+        } finally {
+            shot?.recycle()
+        }
     }
 
     private suspend fun locate(

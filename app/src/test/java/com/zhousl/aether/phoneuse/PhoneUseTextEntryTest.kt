@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Rect
+import kotlin.math.roundToInt
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -26,6 +27,8 @@ class PhoneUseTextEntryTest {
         assertTrue(mentionsWeChat("android", "ActivityRecord{2 u0 com.tencent.mm/.ui.LauncherUI t9}"))
         assertFalse(mentionsWeChat("com.tencent.mm.plugin", "com.tencent.mm.plugin/Foo"))
         assertFalse(mentionsWeChat("com.tencent.wetype", "微信键盘"))
+        assertTrue(isWeTypePackage("com.tencent.wetype"))
+        assertFalse(isWeTypePackage("com.tencent.mm"))
         assertEquals("text", normalizePhoneUseAction("fill_text"))
         assertEquals("tap", normalizePhoneUseAction("tap"))
     }
@@ -135,7 +138,10 @@ class PhoneUseTextEntryTest {
         assertTrue(outcome.reflection.contains("不要逐键打拼音"))
         assertTrue(outcome.reflection.contains("不要请用户手动打字或发送"))
         assertTrue(outcome.reflection.contains("未校验不得当作成功"))
-        assertTrue(outcome.reflection.contains("输入法"))
+        assertTrue(outcome.reflection.contains("不得声称已发送"))
+        assertTrue(outcome.reflection.contains("不要换输入法"))
+        assertFalse(outcome.reflection.contains("再提示切换"))
+        assertFalse(outcome.reflection.contains("切换到可以提交"))
         assertFalse(outcome.reflection.contains("请人手粘贴"))
         assertTrue(host.log.first() == "clipboard")
         assertTrue(host.log.indexOf("set_text") < host.log.indexOf("paste"))
@@ -154,6 +160,96 @@ class PhoneUseTextEntryTest {
         assertEquals(1, host.shortcuts)
         assertEquals("4", host.text)
         assertTrue(outcome.reflection.contains("不能当作成功"))
+    }
+
+    @Test fun bottomInputBarStaysAboveANormalKeyboard() {
+        val bare = bottomInputBarPoint(1080, 2400, density = 2f, keyboardTop = null)
+        assertEquals((1080 * 0.42f).roundToInt(), bare.first)
+        assertEquals(2400 - 128, bare.second)
+        val above = bottomInputBarPoint(1080, 2400, density = 2f, keyboardTop = 2000)
+        assertEquals(2000 - 64, above.second)
+        assertTrue(above.second < 2000)
+        val keyboard = Rect(0, 1800, 1080, 2400)
+        assertTrue(keyboardCoversPasteTarget(500, 1900, keyboard, density = 2f))
+        assertFalse(keyboardCoversPasteTarget(500, 1500, keyboard, density = 2f))
+        val overlay = Rect(900, 1700, 1080, 1900)
+        val send = sendButtonPoint(1800, 1080, 2400, density = 2f, keyboardTop = 2000, overlay = overlay)
+        assertNotNull(send)
+        assertFalse(overlay.contains(send!!.first, send.second))
+        assertTrue(send.second < 2000)
+    }
+
+    @Test fun failedVerificationRetriesAnotherLongPressBeforeShortcut() = runTest {
+        val host = FakeHost()
+        host.labels = mapOf("粘贴" to (420 to 1700))
+        host.acceptPasteOnTap = 2
+        val outcome = PhoneUseTextEntry(host).enter("你好")
+        assertTrue(outcome.reflection, outcome.verified)
+        assertEquals("gesture_paste", outcome.method)
+        assertEquals("你好", host.text)
+        assertTrue(host.presses.size >= 2)
+        assertEquals(0, host.shortcuts)
+    }
+
+    @Test fun coveringWeTypeIsDismissedBeforePaste() = runTest {
+        val host = FakeHost()
+        host.labels = mapOf("粘贴" to (420 to 1400))
+        host.coverKeyboard = Rect(0, 1500, 1080, 2400)
+        host.keyboardPackageName = "com.tencent.wetype"
+        val outcome = PhoneUseTextEntry(host).enter("你好")
+        assertTrue(outcome.reflection, outcome.verified)
+        assertTrue(host.dismissals > 0)
+        assertEquals("你好", host.text)
+        assertFalse(outcome.reflection.contains("再提示切换"))
+    }
+
+    @Test fun clipboardFailureDoesNotSuggestSwitchingInputMethods() = runTest {
+        val host = FakeHost()
+        host.clipboardFails = true
+        val outcome = PhoneUseTextEntry(host).enter("你好")
+        assertFalse(outcome.verified)
+        assertTrue(outcome.reflection.contains("剪贴板不可用"))
+        assertFalse(outcome.reflection.contains("再提示切换"))
+        assertFalse(outcome.reflection.contains("不要换输入法"))
+        assertTrue(host.presses.isEmpty())
+    }
+
+    @Test fun sendUsesEnterOnlyAfterTheDraftIsVerified() = runTest {
+        val host = FakeHost()
+        host.acceptPaste = true
+        host.applyPaste = true
+        host.enterSends = true
+        val outcome = PhoneUseTextEntry(host).enter("你好", sendAfterVerify = true)
+        assertTrue(outcome.reflection, outcome.verified)
+        assertTrue(outcome.sent)
+        assertEquals("keycode_enter", outcome.sentBy)
+        assertEquals(1, host.enters)
+        assertTrue(host.presses.isEmpty())
+    }
+
+    @Test fun unverifiedTextIsNotSent() = runTest {
+        val host = FakeHost()
+        host.enterSends = true
+        val outcome = PhoneUseTextEntry(host).enter("你好", sendAfterVerify = true)
+        assertFalse(outcome.verified)
+        assertFalse(outcome.sent)
+        assertEquals(0, host.enters)
+        assertTrue(outcome.reflection.contains("不得声称已发送"))
+    }
+
+    @Test fun sendButtonAvoidsTheOverlay() = runTest {
+        val host = FakeHost()
+        host.acceptPaste = true
+        host.applyPaste = true
+        host.overlay = Rect(900, 1700, 1080, 1900)
+        host.labels = mapOf("发送" to (1000 to 1850))
+        host.bubbleOnSendTap = true
+        val outcome = PhoneUseTextEntry(host).enter("你好", sendAfterVerify = true)
+        assertTrue(outcome.reflection, outcome.sent)
+        assertEquals("send_button", outcome.sentBy)
+        assertEquals(1, host.enters)
+        assertTrue(host.taps.none { host.overlay!!.contains(it.first, it.second) })
+        assertFalse(host.taps.contains(1000 to 1850))
     }
 
     @Test fun glyphLocatorFindsRenderedTextAndIgnoresABlankField() {
@@ -237,6 +333,18 @@ class PhoneUseTextEntryTest {
         var pastes = 0
         var shortcuts = 0
         var shortcutResult = false
+        var clipboardFails = false
+        var acceptPasteOnTap = 1
+        var pasteTaps = 0
+        var enters = 0
+        var enterSends = false
+        var bubbleVisible = false
+        var bubbleOnSendTap = false
+        var dismissals = 0
+        var keyboardGone = false
+        var coverKeyboard: Rect? = null
+        var keyboardPackageName: String? = null
+        var overlay: Rect? = null
         val taps = mutableListOf<Pair<Int, Int>>()
         val presses = mutableListOf<Pair<Int, Int>>()
         val log = mutableListOf<String>()
@@ -248,6 +356,7 @@ class PhoneUseTextEntryTest {
         override val screenHeight = 2400
         override fun writeClipboard(text: String) {
             log += "clipboard"
+            if (clipboardFails) error("clipboard")
             clip = text
         }
         override fun fieldText(): String? = text
@@ -274,13 +383,38 @@ class PhoneUseTextEntryTest {
         override fun labelCenter(labels: List<String>): Pair<Int, Int>? =
             labels.firstNotNullOfOrNull { this.labels[it] }
         override fun anchor(): Pair<Int, Int> = 500 to 1800
-        override fun keyboardTop(): Int? = 2000
+        override fun keyboardTop(): Int? = if (keyboardGone) null else coverKeyboard?.top ?: 2000
+        override fun keyboardBounds(): Rect? = if (keyboardGone) null else coverKeyboard ?: super.keyboardBounds()
+        override fun keyboardPackage(): String? = keyboardPackageName
+        override fun overlayBounds(): Rect? = overlay
+        override suspend fun dismissKeyboard(): Boolean {
+            dismissals++
+            if (coverKeyboard == null) return false
+            keyboardGone = true
+            return true
+        }
+        override suspend fun tryKeycodeEnter(): Boolean {
+            enters++
+            log += "enter"
+            if (!enterSends) return false
+            text = ""
+            bubbleVisible = true
+            return true
+        }
+        override fun bubbleContains(text: String): Boolean = bubbleVisible && text.isNotEmpty()
         override suspend fun tap(x: Int, y: Int) {
             log += "tap"
             taps += x to y
-            val label = labels.entries.firstOrNull { it.value == x to y }?.key ?: return
-            if (label == "粘贴" || label == "Paste") text = clip
+            val label = labels.entries.firstOrNull { it.value == x to y }?.key
+            if (label == "粘贴" || label == "Paste") {
+                pasteTaps++
+                if (pasteTaps >= acceptPasteOnTap) text = clip
+            }
             if (label == "剪切" || label == "Cut") text = ""
+            if (bubbleOnSendTap && y >= 1600 && overlay?.contains(x, y) != true) {
+                text = ""
+                bubbleVisible = true
+            }
         }
         override suspend fun longPress(x: Int, y: Int) {
             log += "long_press"

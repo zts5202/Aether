@@ -302,7 +302,7 @@ class AgentModeController(
                         val service = PhoneUseAccessibilityService.requireConnected()
                         val guarded = withContext(Dispatchers.Main) { service.needsVerifiedClipboardPaste(displayId) }
                         if (action == "text" && guarded) {
-                            verifiedClipboardText(service, displayId, text, arguments) { observation(it) }
+                            verifiedClipboardText(service, displayId, text, arguments, requestsSend(arguments)) { observation(it) }
                         } else if (guarded && action in setOf("tap", "click", "long_click") &&
                             rejectsGuardedKeyboardTap(service, displayId, nodeId, arguments, usesElement)) {
                             keyboardEditRejected(action)
@@ -339,7 +339,7 @@ class AgentModeController(
                                 if (action == "text" && shouldRecoverTextEntryWithClipboard(error)) pasteInstead = true else throw error
                             }
                             if (pasteInstead) {
-                                verifiedClipboardText(service, displayId, text, arguments) { observation(it) }
+                                verifiedClipboardText(service, displayId, text, arguments, requestsSend(arguments)) { observation(it) }
                             } else {
                                 JSONObject(observation(350)).apply {
                                     targetResolution?.let { put("target_resolution", it) }
@@ -362,10 +362,47 @@ class AgentModeController(
                     }
                     "key" -> {
                         val displayId = ensureDisplay(settings)
-                        withContext(Dispatchers.Main) {
-                            PhoneUseAccessibilityService.requireConnected().navigationKey(displayId, arguments.optString("key"))
+                        val rawKey = arguments.optString("key")
+                        val service = PhoneUseAccessibilityService.requireConnected()
+                        val weChatEnter = isEnterKey(rawKey) && withContext(Dispatchers.Main) {
+                            service.isWeChatContext(displayId)
                         }
-                        observation(300)
+                        if (weChatEnter) {
+                            val state = _displayState.value
+                            val outcome = withContext(Dispatchers.Main) {
+                                service.sendVerifiedWeChat(displayId, arguments.optString("text"), state.width, state.height)
+                            }
+                            val observed = try {
+                                observation(if (outcome.sent) 300 else 150)
+                            } catch (cause: CancellationException) {
+                                throw cause
+                            } catch (_: Throwable) {
+                                null
+                            }
+                            val result = JSONObject(observed ?: "{}")
+                            result.put("sent", outcome.sent)
+                            result.put("sent_by", outcome.sentBy)
+                            if (outcome.sent) {
+                                result.put("ok", true)
+                                result.put("action_succeeded", true)
+                                result.put("stdout", "已发送，并在聊天气泡核对到文字（${outcome.sentBy}）。")
+                            } else {
+                                result.put("ok", false)
+                                result.put("action", "key")
+                                result.put("action_succeeded", false)
+                                result.put("error_code", "send_not_verified")
+                                result.put("errmsg", outcome.reflection)
+                                result.put("reflection", outcome.reflection)
+                                result.put("stdout", outcome.reflection)
+                                result.put("attempts", JSONArray(outcome.attempts))
+                            }
+                            result.toString()
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                service.navigationKey(displayId, rawKey)
+                            }
+                            observation(300)
+                        }
                     }
                     "screenshot" -> {
                         ensureDisplay(settings)
@@ -1485,6 +1522,7 @@ class AgentModeController(
         displayId: Int,
         text: String,
         arguments: JSONObject,
+        sendAfterVerify: Boolean,
         observe: suspend (Long) -> String,
     ): String {
         val anchor = optionalTextAnchor(arguments)
@@ -1497,6 +1535,7 @@ class AgentModeController(
                 anchorY = anchor?.second,
                 screenWidth = state.width,
                 screenHeight = state.height,
+                sendAfterVerify = sendAfterVerify,
             )
         }
         val observed = try {
@@ -1507,13 +1546,32 @@ class AgentModeController(
             null
         }
         val result = JSONObject(observed ?: "{}")
-        if (outcome.verified) {
+        result.put("sent", outcome.sent)
+        if (outcome.sent) result.put("sent_by", outcome.sentBy)
+        val delivered = outcome.verified && (!sendAfterVerify || outcome.sent)
+        if (delivered) {
             result.put("ok", true)
             result.put("action_succeeded", true)
             result.put("text_verified", true)
             result.put("text_method", outcome.method)
             result.put("verified_by", outcome.verifiedBy)
-            result.put("stdout", "文字已写入输入框，校验方式：${outcome.verifiedBy}，手段：${outcome.method}。")
+            result.put(
+                "stdout",
+                if (outcome.sent) "文字已写入输入框并在聊天气泡确认发出，方式：${outcome.sentBy}，校验：${outcome.verifiedBy}。"
+                else "文字已写入输入框，校验方式：${outcome.verifiedBy}，手段：${outcome.method}。尚未发送，不要声称已发送。",
+            )
+        } else if (outcome.verified) {
+            result.put("ok", false)
+            result.put("action", "text")
+            result.put("action_succeeded", false)
+            result.put("error_code", "send_not_verified")
+            result.put("text_verified", true)
+            result.put("text_method", outcome.method)
+            result.put("verified_by", outcome.verifiedBy)
+            result.put("errmsg", outcome.reflection)
+            result.put("reflection", outcome.reflection)
+            result.put("stdout", outcome.reflection)
+            result.put("attempts", JSONArray(outcome.attempts))
         } else {
             result.put("ok", false)
             result.put("action", "text")
@@ -1526,6 +1584,17 @@ class AgentModeController(
             result.put("attempts", JSONArray(outcome.attempts))
         }
         return result.toString()
+    }
+
+    private fun requestsSend(arguments: JSONObject): Boolean {
+        if (!arguments.has("send")) return false
+        val value = arguments.opt("send")
+        return value == true || value?.toString()?.equals("true", ignoreCase = true) == true
+    }
+
+    private fun isEnterKey(key: String): Boolean {
+        val name = key.trim().uppercase().removePrefix("KEYCODE_")
+        return name == "ENTER" || name == "66"
     }
 
     private fun optionalTextAnchor(arguments: JSONObject): Pair<Int, Int>? {

@@ -19,7 +19,11 @@ class AetherToolExecutorTest {
         assertTrue(text.contains("pinyin"))
         assertTrue(text.contains("do not ask the user to type, paste, or send"))
         assertTrue(text.contains("Focused field rejected text"))
+        assertTrue(text.contains("bottom input"))
         assertFalse(text.contains("focused editable field is required"))
+        val send = definition.getJSONObject("parameters").getJSONObject("properties").getJSONObject("send")
+        assertEquals("boolean", send.getString("type"))
+        assertTrue(send.getString("description").contains("KEYCODE_ENTER"))
     }
 
     @Test

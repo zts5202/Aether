@@ -42,18 +42,21 @@ internal fun buildPiAgentInstructions(
                 "Never simulate USER/tool_result messages or write fictional tool outputs. Only actual agent_display results establish whether a device action succeeded. " +
                 "Coordinate tap/swipe uses normalized 0..1000 coordinates: pixel_x / image_width * 1000, pixel_y / image_height * 1000. " +
                 "Use text (fill_text is the same action) to enter text. Password values are redacted. " +
-                "On WeChat (com.tencent.mm), or when the accessibility tree is empty or has no editable node, text is the only input path. " +
-                "It writes the clipboard, then ACTION_SET_TEXT and ACTION_PASTE, then taps the field so the keyboard appears, long-presses that field, and taps 粘贴. " +
-                "It can also send a system paste shortcut when the device supports Ctrl+V or KEYCODE_PASTE. " +
+                "On WeChat (com.tencent.mm), including an empty tree or a screen that only shows com.tencent.wetype, Chinese text is clipboard-only. " +
+                "text writes the full string to the clipboard, focuses the bottom input bar, dismisses or avoids the WeChat keyboard when it covers 粘贴, long-presses that bar, and taps 粘贴. " +
+                "If there is no editable node, the host uses bottom input-bar coordinates. " +
                 "Do not first try a node write that WeChat rejects and then stop. " +
-                "A missing Editable node and \"Focused field rejected text\" are not reasons to give up. " +
+                "A missing Editable node and \"Focused field rejected text\" are not reasons to give up or to blame the input method. " +
                 "Do not type pinyin key by key. Do not tap IME keys one by one, and do not ask the user to paste manually. " +
                 "Do not ask the user to type or send the message. " +
+                "Do not tell the user to switch input methods unless the tool says the clipboard itself is unavailable. " +
                 "Empty text clears by selecting all, not by tapping backspace. " +
-                "text_verified is true only after the field text or a screenshot shows the target. Never report success without that check. " +
-                "If text_verified is false, show the Chinese reflection verbatim and do not propose another input method. " +
-                "Suggest switching input methods only after clipboard paste, long-press 粘贴, and the system paste shortcut have failed. " +
-                "微信（com.tencent.mm）或空树只能走剪贴板粘贴。禁止逐键拼音，禁止请用户手发。 " +
+                "text_verified is true only after the accessibility tree or a screenshot shows the target in the input. Never report success without that check. " +
+                "If text_verified is false, show the Chinese reflection verbatim and call text again. Do not claim the message was sent. " +
+                "To deliver a WeChat chat message, call text with send=true. The host sends only after text_verified: KEYCODE_ENTER first, otherwise the Send button, avoiding the right-edge overlay. " +
+                "sent is true only after a chat bubble shows the text. Never tell the user the message was sent unless sent is true. " +
+                "If text_verified is true and sent is false, call key ENTER once with the same text. Do not paste a second copy while the draft is still in the input. " +
+                "微信（com.tencent.mm）中文只能走剪贴板粘贴。禁止逐键拼音，禁止请用户手发。未校验不得声称已发送。 " +
                 "Foreground Phone Use changes the screen the user sees. Virtual Display global navigation is unavailable; use app elements. " +
                 "When foreground phone work is complete, you may call agent_display with action=stop and return_to_aether=true to bring the user back to Aether for your final reply. " +
                 "Leave return_to_aether omitted/false when the user should remain in the operated app to see or use the result. This choice is unavailable in Virtual Display mode."

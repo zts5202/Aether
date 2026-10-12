@@ -45,6 +45,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.math.roundToInt
 
 /** User-enabled service shared by foreground Phone Use and privileged Virtual Display sessions. */
 class PhoneUseAccessibilityService : AccessibilityService() {
@@ -370,7 +371,7 @@ class PhoneUseAccessibilityService : AccessibilityService() {
                 put("node_count", count)
                 put("truncated", truncated)
                 put("stdout", if (count == 0) {
-                    "没有可读的无障碍节点。微信或空树只能用 text 剪贴板粘贴（SET_TEXT、PASTE、长按「粘贴」）。不要把失败的 fill_text 当成成功，不要逐键打拼音，不要请用户手发，也不要点软键盘删除。"
+                    "没有可读的无障碍节点。微信或空树只能用 text 把整句放进剪贴板，聚焦底部输入栏，避开微信键盘后长按并点「粘贴」。没有节点时用底部输入栏坐标。不要把未校验的 fill_text 当成成功，不要逐键打拼音，不要换输入法，不要请用户打字或发送，也不要在气泡确认前声称已发送。"
                 } else "Phone Use element tree. Use node_id for actions; request screenshot only if needed.")
             }
             return ObservationSnapshot(json, snapshotNodes, windowIds)
@@ -631,13 +632,14 @@ class PhoneUseAccessibilityService : AccessibilityService() {
         anchorY: Int?,
         screenWidth: Int,
         screenHeight: Int,
+        sendAfterVerify: Boolean = false,
     ): TextEntryOutcome {
         val host = LiveTextEntryHost(displayId, anchorX, anchorY, screenWidth, screenHeight)
         try {
-            val outcome = PhoneUseTextEntry(host).enter(text)
+            val outcome = PhoneUseTextEntry(host).enter(text, sendAfterVerify)
             android.util.Log.i(
                 "PhoneUseText",
-                "verified=${outcome.verified} method=${outcome.method} via=${outcome.verifiedBy} attempts=${outcome.attempts.size}",
+                "verified=${outcome.verified} sent=${outcome.sent} method=${outcome.method} via=${outcome.verifiedBy} attempts=${outcome.attempts.size}",
             )
             return outcome
         } finally {
@@ -645,6 +647,24 @@ class PhoneUseAccessibilityService : AccessibilityService() {
             actionInvalidated = true
         }
     }
+
+    /** KEYCODE_ENTER, then the Send button. Used after a verified WeChat draft. */
+    internal suspend fun sendVerifiedWeChat(
+        displayId: Int,
+        expected: String,
+        screenWidth: Int,
+        screenHeight: Int,
+    ): TextEntryOutcome {
+        val host = LiveTextEntryHost(displayId, null, null, screenWidth, screenHeight)
+        try {
+            return PhoneUseTextEntry(host).sendOnly(expected)
+        } finally {
+            host.close()
+            actionInvalidated = true
+        }
+    }
+
+    internal fun isWeChatContext(displayId: Int): Boolean = displayContainsWeChat(displayId)
 
     internal fun needsVerifiedClipboardPaste(displayId: Int): Boolean {
         if (displayContainsWeChat(displayId)) return true
@@ -711,6 +731,27 @@ class PhoneUseAccessibilityService : AccessibilityService() {
             return false
         }
         return process.exitValue() == 0
+    }
+
+    private class KeyboardWindow(val bounds: Rect, val packageName: String, val ime: Boolean)
+
+    private fun keyboardWindow(displayId: Int): KeyboardWindow? {
+        val ime = rawDisplayWindows(displayId)
+            .filter { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+            .maxByOrNull { it.layer }
+        if (ime != null) {
+            val bounds = Rect().also(ime::getBoundsInScreen)
+            val root = ime.root
+            val pkg = try { root?.packageName?.toString().orEmpty() } finally { root?.recycle() }
+            if (!bounds.isEmpty) return KeyboardWindow(bounds, pkg, ime = true)
+        }
+        val wetype = rawDisplayWindows(displayId).filter { window ->
+            if (isOwnOverlay(window)) return@filter false
+            val root = window.root ?: return@filter false
+            try { isWeTypePackage(root.packageName?.toString()) } finally { root.recycle() }
+        }.maxByOrNull { it.layer } ?: return null
+        val bounds = Rect().also(wetype::getBoundsInScreen)
+        return bounds.takeUnless { it.isEmpty }?.let { KeyboardWindow(it, WeTypePackageName, ime = false) }
     }
 
     internal fun inputMethodBounds(displayId: Int): Rect? {
@@ -834,7 +875,15 @@ class PhoneUseAccessibilityService : AccessibilityService() {
         override fun writeClipboard(text: String) {
             val manager = getSystemService(ClipboardManager::class.java)
                 ?: error("Clipboard is unavailable.")
-            manager.setPrimaryClip(ClipData.newPlainText("aether-phone-use", text))
+            val clip = ClipData.newPlainText("aether-phone-use", text)
+            // HyperOS ignores clipboard writes from a background app. Focus a 1px overlay,
+            // copy from there, then drop it before the WeChat long-press.
+            val focusedCopy = runCatching { overlayController?.copyToClipboard(text) == true }.getOrDefault(false)
+            try {
+                manager.setPrimaryClip(clip)
+            } catch (error: Exception) {
+                if (!focusedCopy) throw error
+            }
         }
 
         override fun fieldText(): String? {
@@ -890,15 +939,70 @@ class PhoneUseAccessibilityService : AccessibilityService() {
                 val rect = Rect().also(node::getBoundsInScreen)
                 if (rect.isEmpty) null else rect.centerX() to rect.centerY()
             }
-            var x = anchorX ?: fromField?.first ?: screenWidth / 2
-            var y = anchorY ?: fromField?.second ?: keyboardTop?.let { top ->
-                (top - 36 * density).toInt()
-            } ?: (screenHeight * 0.86f).toInt()
-            if (keyboardTop != null && y >= keyboardTop) y = (keyboardTop - 36 * density).toInt()
-            return x.coerceIn(0, screenWidth - 1) to y.coerceIn(0, screenHeight - 1)
+            val raw = when {
+                anchorX != null && anchorY != null -> anchorX to anchorY
+                fromField != null -> fromField
+                else -> bottomInputBarPoint(screenWidth, screenHeight, density, keyboardTop)
+            }
+            val normalTop = keyboardTop?.takeIf { it > (screenHeight * 0.45f).roundToInt() }
+            val liftedY = if (normalTop != null && raw.second >= normalTop) {
+                (normalTop - 32f * density).roundToInt()
+            } else raw.second
+            val ceiling = ((normalTop ?: screenHeight) - 1).coerceAtLeast(0)
+            return raw.first.coerceIn(0, (screenWidth - 1).coerceAtLeast(0)) to liftedY.coerceIn(0, ceiling.coerceAtMost((screenHeight - 1).coerceAtLeast(0)))
         }
 
-        override fun keyboardTop(): Int? = inputMethodBounds(displayId)?.top
+        override fun keyboardTop(): Int? = keyboardWindow(displayId)?.bounds?.top
+
+        override fun keyboardBounds(): Rect? = keyboardWindow(displayId)?.bounds
+
+        override fun keyboardPackage(): String? = keyboardWindow(displayId)?.packageName?.ifBlank { null }
+
+        override suspend fun dismissKeyboard(): Boolean {
+            val window = keyboardWindow(displayId) ?: return false
+            // A full-screen non-IME window is not a keyboard; Back would leave the chat.
+            if (!window.ime && window.bounds.height() > screenHeight / 2) return false
+            val accepted = performGlobalAction(GLOBAL_ACTION_BACK)
+            kotlinx.coroutines.delay(320)
+            return accepted && keyboardBounds() == null
+        }
+
+        override fun overlayBounds(): Rect? = overlayController?.touchBounds()
+
+        override suspend fun tryKeycodeEnter(): Boolean = withContext(Dispatchers.IO) {
+            runCatching { runInputCommand(arrayOf("input", "keyevent", "66")) }.getOrDefault(false)
+        }
+
+        override fun bubbleContains(text: String): Boolean {
+            val sample = text.trim()
+            if (sample.isEmpty()) return false
+            fun matches(node: AccessibilityNodeInfo): Boolean {
+                if (!node.isVisibleToUser || node.isEditable || node === field) return false
+                val value = node.text?.toString().orEmpty()
+                val description = node.contentDescription?.toString().orEmpty()
+                return value.contains(sample) || description.contains(sample)
+            }
+            fun walk(node: AccessibilityNodeInfo, depth: Int): Boolean {
+                if (depth > 48) return false
+                if (matches(node)) return true
+                for (index in 0 until node.childCount) {
+                    val child = node.getChild(index) ?: continue
+                    try {
+                        if (walk(child, depth + 1)) return true
+                    } finally { if (child !== field) child.recycle() }
+                }
+                return false
+            }
+            for (window in displayWindows(displayId, excludeKeyboard = true)) {
+                if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) continue
+                val root = window.root ?: continue
+                try {
+                    if (isWeTypePackage(root.packageName?.toString())) continue
+                    if (walk(root, 0)) return true
+                } finally { if (root !== field) root.recycle() }
+            }
+            return false
+        }
 
         override suspend fun tap(x: Int, y: Int) {
             gesture(displayId, x, y, duration = 60)

@@ -62,6 +62,11 @@ class PiAgentPromptTest {
         assertTrue(instructions.contains("Focused field rejected text"))
         assertTrue(instructions.contains("禁止逐键拼音，禁止请用户手发"))
         assertTrue(instructions.contains("Never report success without that check"))
+        assertTrue(instructions.contains("send=true"))
+        assertTrue(instructions.contains("KEYCODE_ENTER"))
+        assertTrue(instructions.contains("unless sent is true"))
+        assertTrue(instructions.contains("clipboard itself is unavailable"))
+        assertFalse(instructions.contains("Suggest switching input methods"))
     }
 
     @Test
