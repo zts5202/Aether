@@ -22,8 +22,8 @@ import kotlin.math.roundToInt
 internal class PhoneUseCommentaryView(context: Context) : View(context) {
     private val dp = resources.displayMetrics.density
     private val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(35, 35, 40)
-        textSize = 15f * resources.displayMetrics.scaledDensity
+        color = Color.rgb(28, 28, 32)
+        textSize = 12.5f * resources.displayMetrics.scaledDensity
         typeface = Typeface.create("sans-serif", Typeface.NORMAL)
     }
     private val blur = (0..12).map { if (it == 0) null else BlurMaskFilter(it * dp / 3f, BlurMaskFilter.Blur.NORMAL) }
@@ -50,7 +50,7 @@ internal class PhoneUseCommentaryView(context: Context) : View(context) {
     }
 
     fun setCommentary(id: String, text: String) {
-        val normalized = text.replace(Regex("[\\t\\r ]+"), " ").trim().takeLast(6000)
+        val normalized = phoneUseCommentaryForOverlay(text).takeLast(6000)
         if (id == messageId && normalized == value) return
         motion = ValueAnimator.areAnimatorsEnabled()
         val now = SystemClock.uptimeMillis()
@@ -66,7 +66,7 @@ internal class PhoneUseCommentaryView(context: Context) : View(context) {
                     }
                 }, 0, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 StaticLayout.Builder.obtain(text, 0, text.length, paint, previous.width)
-                    .setAlignment(previous.alignment).setIncludePad(false).setLineSpacing(3f * dp, 1f).build()
+                    .setAlignment(previous.alignment).setIncludePad(false).setLineSpacing(2f * dp, 1f).build()
             }
             runs.clear()
         }
@@ -95,11 +95,15 @@ internal class PhoneUseCommentaryView(context: Context) : View(context) {
             if (run.from < run.to && run.to <= styled.length) styled.setSpan(RevealSpan(run), run.from, run.to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         val next = StaticLayout.Builder.obtain(styled, 0, styled.length, paint, layoutWidth)
-            .setAlignment(if (!value.contains('\n') && paint.measureText(value) <= layoutWidth) Layout.Alignment.ALIGN_CENTER else Layout.Alignment.ALIGN_NORMAL)
-            .setIncludePad(false).setLineSpacing(3f * dp, 1f).build()
-        val visibleLines = next.lineCount.coerceAtMost(4)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setIncludePad(false).setLineSpacing(2f * dp, 1f).build()
+        val visibleLines = next.lineCount.coerceAtMost(MAX_VISIBLE_LINES)
+        if (visibleLines == 0) {
+            layout = next
+            return
+        }
         val textHeight = next.getLineBottom(visibleLines - 1)
-        val desired = (textHeight + 28f * dp).roundToInt().coerceAtLeast((56f * dp).roundToInt())
+        val desired = (textHeight + 14f * dp).roundToInt().coerceAtLeast((40f * dp).roundToInt())
         scrollFrom = currentScroll()
         scrollTo = (next.height - textHeight).coerceAtLeast(0).toFloat()
         scrollStartedAt = SystemClock.uptimeMillis()
@@ -132,9 +136,9 @@ internal class PhoneUseCommentaryView(context: Context) : View(context) {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
-        val available = (width - 36f * dp).roundToInt().coerceAtLeast(1)
+        val available = (width - 16f * dp).roundToInt().coerceAtLeast(1)
         if (available != layoutWidth) { layoutWidth = available; rebuildLayout() }
-        setMeasuredDimension(width, animatedHeight.coerceAtLeast(ceil(56f * dp).toInt()))
+        setMeasuredDimension(width, animatedHeight.coerceAtLeast(ceil(40f * dp).toInt()))
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -143,21 +147,21 @@ internal class PhoneUseCommentaryView(context: Context) : View(context) {
         val swap = if (motion) ((now - changedAt) / 440f).coerceIn(0f, 1f) else 1f
         val progress = easing.getInterpolation(swap)
         canvas.save()
-        canvas.clipRect(12f * dp, 6f * dp, width - 12f * dp, height - 6f * dp)
+        canvas.clipRect(6f * dp, 4f * dp, width - 6f * dp, height - 4f * dp)
         if (progress < 1f) outgoing?.let { old ->
             canvas.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), ((1f - progress) * 255).toInt())
-            canvas.translate(18f * dp, textTop(old) - (old.height - height + 28f * dp).coerceAtLeast(0f) - progress * 10f * dp)
+            canvas.translate(8f * dp, textTop(old) - (old.height - height + 14f * dp).coerceAtLeast(0f) - progress * 8f * dp)
             old.draw(canvas)
             canvas.restore()
         } else outgoing = null
-        canvas.translate(18f * dp, textTop(incoming) - currentScroll())
+        canvas.translate(8f * dp, textTop(incoming) - currentScroll())
         incoming.draw(canvas)
         canvas.restore()
         if (motion && (progress < 1f || now - scrollStartedAt < 300 || runs.any { now - it.born < REVEAL_MILLIS })) postInvalidateOnAnimation()
     }
 
     private fun textTop(text: StaticLayout): Float {
-        val visibleHeight = text.height.toFloat().coerceAtMost((height - 28f * dp).coerceAtLeast(0f))
+        val visibleHeight = text.height.toFloat().coerceAtMost((height - 14f * dp).coerceAtLeast(0f))
         return (height - visibleHeight) / 2f
     }
 
@@ -166,5 +170,8 @@ internal class PhoneUseCommentaryView(context: Context) : View(context) {
         super.onDetachedFromWindow()
     }
 
-    companion object { private const val REVEAL_MILLIS = 420L }
+    companion object {
+        private const val REVEAL_MILLIS = 420L
+        private const val MAX_VISIBLE_LINES = 2
+    }
 }

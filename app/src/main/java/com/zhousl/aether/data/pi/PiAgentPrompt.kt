@@ -1,5 +1,6 @@
 package com.zhousl.aether.data.pi
 
+import com.zhousl.aether.data.AppLanguage
 import com.zhousl.aether.data.AppSettings
 import com.zhousl.aether.data.LocalRuntimeId
 import java.time.ZonedDateTime
@@ -58,6 +59,12 @@ internal fun buildPiAgentInstructions(
                 "Leave return_to_aether omitted/false when the user should remain in the operated app to see or use the result. This choice is unavailable in Virtual Display mode."
 
         )
+        if (settings.language == AppLanguage.SimplifiedChinese) {
+            append(
+                " Write every user-visible progress sentence in Simplified Chinese, in one or two short sentences. " +
+                    "The on-screen Phone Use bubble shows that text to the user. Do not narrate those actions in English."
+            )
+        }
     }
     if (chromeEnabled) {
         append(

@@ -1,5 +1,6 @@
 package com.zhousl.aether.data.pi
 
+import com.zhousl.aether.data.AppLanguage
 import com.zhousl.aether.data.AppSettings
 import com.zhousl.aether.data.LocalRuntimeId
 import org.junit.Assert.assertFalse
@@ -61,5 +62,17 @@ class PiAgentPromptTest {
         assertTrue(instructions.contains("Focused field rejected text"))
         assertTrue(instructions.contains("禁止逐键拼音，禁止请用户手发"))
         assertTrue(instructions.contains("Never report success without that check"))
+    }
+
+    @Test
+    fun chinesePhoneUseAsksForChineseProgressSentences() {
+        val instructions = buildPiAgentInstructions(
+            settings = AppSettings(language = AppLanguage.SimplifiedChinese),
+            workspaceDirectory = "/workspace",
+            runtimeId = LocalRuntimeId.Alpine,
+            agentModeEnabled = true,
+        )
+        assertTrue(instructions.contains("Simplified Chinese"))
+        assertTrue(instructions.contains("Do not narrate those actions in English"))
     }
 }

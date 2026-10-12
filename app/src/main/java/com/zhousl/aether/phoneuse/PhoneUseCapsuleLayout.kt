@@ -25,12 +25,13 @@ internal class PhoneUseCapsuleLayout(context: Context) : FrameLayout(context) {
     private val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = density
-        color = Color.argb(130, 255, 255, 255)
+        color = Color.argb(88, 52, 56, 68)
     }
 
     init {
         setWillNotDraw(false)
-        elevation = 12f * density
+        setBackgroundColor(Color.TRANSPARENT)
+        elevation = 6f * density
         outlineProvider = object : ViewOutlineProvider() {
             @Suppress("DEPRECATION")
             override fun getOutline(view: View, outline: Outline) {
@@ -45,7 +46,7 @@ internal class PhoneUseCapsuleLayout(context: Context) : FrameLayout(context) {
         val top = inset
         val right = w - inset
         val bottom = h - inset
-        val radius = min(32f * density, min(right - left, bottom - top) / 2f).coerceAtLeast(0f)
+        val radius = min(16f * density, min(right - left, bottom - top) / 2f).coerceAtLeast(0f)
         contour.rewind()
         // A superellipse (n = 2.5) has zero curvature at its joins with each straight side.
         fun corner(cx: Float, cy: Float, start: Double) {
@@ -63,8 +64,8 @@ internal class PhoneUseCapsuleLayout(context: Context) : FrameLayout(context) {
         corner(left + radius, bottom - radius, Math.PI / 2)
         corner(left + radius, top + radius, Math.PI)
         contour.close()
-        fill.shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(),
-            Color.argb(248, 255, 249, 252), Color.argb(248, 243, 245, 255), Shader.TileMode.CLAMP)
+        fill.shader = LinearGradient(0f, 0f, 0f, h.toFloat(),
+            Color.argb(176, 255, 255, 255), Color.argb(132, 232, 236, 246), Shader.TileMode.CLAMP)
         invalidateOutline()
     }
 
