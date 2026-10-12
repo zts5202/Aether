@@ -1206,7 +1206,8 @@ internal fun parseMessage(message: JSONObject, messageIndex: Int): ChatMessage =
     statusDetail = message.optString("statusDetail"),
     providerPayloadJson = message.optString("providerPayloadJson"),
     displayKind = parseMessageDisplayKind(message.optString("displayKind")),
-    usageStatistics = parseUsageStatistics(message.optJSONObject("usageStatistics")),
+    usageStatistics = parseUsageStatistics(message.optJSONObject("usageStatistics"))
+        ?.withResolvedModelId(message.optString("providerPayloadJson")),
 )
 
 private fun parseMessageDisplayKind(value: String): MessageDisplayKind =
@@ -1247,6 +1248,11 @@ private fun String.parseUsageStatisticsOrNull(): ChatUsageStatistics? =
         parseUsageStatistics(JSONObject(this).optJSONObject("usageStatistics"))
     }.getOrNull()
 
+private fun ChatUsageStatistics.withResolvedModelId(providerPayloadJson: String): ChatUsageStatistics {
+    val resolved = preferredUsageModelId(modelId, providerPayloadJson)
+    return if (resolved == modelId) this else copy(modelId = resolved)
+}
+
 private fun parseUsageStatistics(json: JSONObject?): ChatUsageStatistics? {
     if (json == null) return null
     return ChatUsageStatistics(
@@ -1259,6 +1265,7 @@ private fun parseUsageStatistics(json: JSONObject?): ChatUsageStatistics? {
         outputDurationMillis = json.optionalLong("outputDurationMillis"),
         requestCount = json.optInt("requestCount", 1).coerceAtLeast(1),
         tokenUsageSource = json.optString("tokenUsageSource").ifBlank { "unavailable" },
+        modelId = json.optString("modelId").trim(),
         startedAtMillis = json.optLong("startedAtMillis"),
         firstTokenAtMillis = json.optionalLong("firstTokenAtMillis"),
         completedAtMillis = json.optLong("completedAtMillis"),
@@ -1275,6 +1282,7 @@ private fun ChatUsageStatistics.toJson(): JSONObject = JSONObject().apply {
     outputDurationMillis?.let { put("outputDurationMillis", it) }
     put("requestCount", requestCount)
     put("tokenUsageSource", tokenUsageSource)
+    modelId.takeIf { it.isNotBlank() }?.let { put("modelId", it) }
     if (startedAtMillis > 0L) put("startedAtMillis", startedAtMillis)
     firstTokenAtMillis?.let { put("firstTokenAtMillis", it) }
     if (completedAtMillis > 0L) put("completedAtMillis", completedAtMillis)

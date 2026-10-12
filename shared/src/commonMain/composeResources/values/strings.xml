@@ -78,6 +78,10 @@
     <string name="statistics_reasoning">Reasoning</string>
     <string name="statistics_dash">-</string>
     <string name="statistics_unavailable">Unavailable</string>
+    <string name="statistics_turn_cost">Turn cost</string>
+    <string name="statistics_session_cost">Session cost</string>
+    <string name="statistics_estimated_cost">about %1$s</string>
+    <string name="statistics_price_unavailable">No pricing</string>
     <string name="common_save">Save</string>
     <string name="common_search">Search</string>
     <string name="common_on">On</string>
