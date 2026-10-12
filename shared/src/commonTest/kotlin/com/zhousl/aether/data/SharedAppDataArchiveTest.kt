@@ -32,6 +32,8 @@ class SharedAppDataArchiveTest {
             phoneUseOutputStrategy = PhoneUseOutputStrategy.GestureFirst,
             phoneUseAllowStrategySwitch = false,
             phoneUseVirtualDisplayEnabled = true,
+            phoneUseShowCommentary = false,
+            phoneUseShowEdgeGlow = false,
             agentModeDisplayOrientation = AgentModeDisplayOrientation.Landscape,
         )
         val decoded = decodeSharedAppDataArchive(encodeSharedAppDataArchive(archive.copy(settings = settings)))

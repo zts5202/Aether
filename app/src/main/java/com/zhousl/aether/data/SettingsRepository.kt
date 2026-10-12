@@ -92,6 +92,13 @@ class SettingsRepository(
         }
     }
 
+    suspend fun updatePhoneUseVisualFeedback(showCommentary: Boolean, showEdgeGlow: Boolean) {
+        context.dataStore.edit {
+            it[PHONE_USE_SHOW_COMMENTARY] = showCommentary
+            it[PHONE_USE_SHOW_EDGE_GLOW] = showEdgeGlow
+        }
+    }
+
     suspend fun updateAgentModeDisplayOrientation(orientation: AgentModeDisplayOrientation) {
         context.dataStore.edit { it[AGENT_MODE_DISPLAY_ORIENTATION] = orientation.storageValue }
     }
@@ -187,6 +194,8 @@ class SettingsRepository(
             phoneUseOutputStrategy = PhoneUseOutputStrategy.fromStorage(preferences[PHONE_USE_OUTPUT_STRATEGY]),
             phoneUseAllowStrategySwitch = preferences[PHONE_USE_ALLOW_STRATEGY_SWITCH] ?: true,
             phoneUseVirtualDisplayEnabled = preferences[PHONE_USE_VIRTUAL_DISPLAY_ENABLED] ?: false,
+            phoneUseShowCommentary = preferences[PHONE_USE_SHOW_COMMENTARY] ?: true,
+            phoneUseShowEdgeGlow = preferences[PHONE_USE_SHOW_EDGE_GLOW] ?: true,
             agentModeDisplayOrientation = AgentModeDisplayOrientation.fromStorage(preferences[AGENT_MODE_DISPLAY_ORIENTATION]),
             agentModeAuthorizationEnabled = preferences[AGENT_MODE_AUTHORIZATION_ENABLED] ?: true,
             agentModeAuthorizationMethod = AgentModeAuthorizationMethod.fromStorage(
@@ -495,6 +504,8 @@ class SettingsRepository(
             it[PHONE_USE_OUTPUT_STRATEGY] = settings.phoneUseOutputStrategy.storageValue
             it[PHONE_USE_ALLOW_STRATEGY_SWITCH] = settings.phoneUseAllowStrategySwitch
             it[PHONE_USE_VIRTUAL_DISPLAY_ENABLED] = settings.phoneUseVirtualDisplayEnabled
+            it[PHONE_USE_SHOW_COMMENTARY] = settings.phoneUseShowCommentary
+            it[PHONE_USE_SHOW_EDGE_GLOW] = settings.phoneUseShowEdgeGlow
             it[AGENT_MODE_DISPLAY_ORIENTATION] = settings.agentModeDisplayOrientation.storageValue
             it[AGENT_MODE_AUTHORIZATION_ENABLED] = settings.agentModeAuthorizationEnabled
             it[AGENT_MODE_AUTHORIZATION_METHOD] = settings.agentModeAuthorizationMethod.storageValue
@@ -709,6 +720,8 @@ class SettingsRepository(
         val PHONE_USE_INPUT_STRATEGY = stringPreferencesKey("phone_use_input_strategy")
         val PHONE_USE_OUTPUT_STRATEGY = stringPreferencesKey("phone_use_output_strategy")
         val PHONE_USE_ALLOW_STRATEGY_SWITCH = booleanPreferencesKey("phone_use_allow_strategy_switch")
+        val PHONE_USE_SHOW_COMMENTARY = booleanPreferencesKey("phone_use_show_commentary")
+        val PHONE_USE_SHOW_EDGE_GLOW = booleanPreferencesKey("phone_use_show_edge_glow")
         val AGENT_MODE_DISPLAY_ORIENTATION = stringPreferencesKey("agent_mode_display_orientation")
         val PHONE_USE_VIRTUAL_DISPLAY_ENABLED = booleanPreferencesKey("phone_use_virtual_display_enabled")
         val AGENT_MODE_AUTHORIZATION_ENABLED =

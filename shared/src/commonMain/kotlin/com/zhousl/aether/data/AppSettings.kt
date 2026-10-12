@@ -238,6 +238,8 @@ data class AppSettings(
     val phoneUseOutputStrategy: PhoneUseOutputStrategy = PhoneUseOutputStrategy.ElementFirst,
     val phoneUseAllowStrategySwitch: Boolean = true,
     val phoneUseVirtualDisplayEnabled: Boolean = false,
+    val phoneUseShowCommentary: Boolean = true,
+    val phoneUseShowEdgeGlow: Boolean = true,
     val agentModeDisplayOrientation: AgentModeDisplayOrientation = AgentModeDisplayOrientation.Device,
     val language: AppLanguage = defaultAppLanguage(),
     val themeMode: AppThemeMode = AppThemeMode.System,

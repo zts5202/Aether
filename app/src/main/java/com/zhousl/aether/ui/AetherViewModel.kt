@@ -2413,6 +2413,14 @@ class AetherViewModel(
         viewModelScope.launch { settingsRepository.updatePhoneUseOptions(input, output, allowSwitch) }
     }
 
+    fun savePhoneUseVisualFeedback(showCommentary: Boolean, showEdgeGlow: Boolean) {
+        _uiState.update { it.copy(settings = it.settings.copy(
+            phoneUseShowCommentary = showCommentary,
+            phoneUseShowEdgeGlow = showEdgeGlow,
+        )) }
+        viewModelScope.launch { settingsRepository.updatePhoneUseVisualFeedback(showCommentary, showEdgeGlow) }
+    }
+
     fun cancelVirtualDisplayAuthorization() {
         pendingVirtualDisplayMethod = null
         agentModeController.cancelVirtualDisplayAuthorization()
@@ -6023,6 +6031,8 @@ class AetherViewModel(
         put("phoneUseOutputStrategy", phoneUseOutputStrategy.storageValue)
         put("phoneUseAllowStrategySwitch", phoneUseAllowStrategySwitch)
         put("phoneUseVirtualDisplayEnabled", phoneUseVirtualDisplayEnabled)
+        put("phoneUseShowCommentary", phoneUseShowCommentary)
+        put("phoneUseShowEdgeGlow", phoneUseShowEdgeGlow)
         put("agentModeDisplayOrientation", agentModeDisplayOrientation.storageValue)
         put("agentModeAuthorizationEnabled", agentModeAuthorizationEnabled)
         put("agentModeAuthorizationMethod", agentModeAuthorizationMethod.storageValue)
@@ -6126,6 +6136,8 @@ class AetherViewModel(
             phoneUseOutputStrategy = PhoneUseOutputStrategy.fromStorage(json.optString("phoneUseOutputStrategy")),
             phoneUseAllowStrategySwitch = json.optBoolean("phoneUseAllowStrategySwitch", true),
             phoneUseVirtualDisplayEnabled = json.optBoolean("phoneUseVirtualDisplayEnabled", false),
+            phoneUseShowCommentary = json.optBoolean("phoneUseShowCommentary", true),
+            phoneUseShowEdgeGlow = json.optBoolean("phoneUseShowEdgeGlow", true),
             agentModeDisplayOrientation = AgentModeDisplayOrientation.fromStorage(json.optString("agentModeDisplayOrientation")),
             agentModeAuthorizationEnabled = json.optBoolean(
                 "agentModeAuthorizationEnabled",

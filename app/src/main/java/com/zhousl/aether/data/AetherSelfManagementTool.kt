@@ -799,6 +799,8 @@ class AetherSelfManagementTool(
             .put("output_strategy", settings.phoneUseOutputStrategy.storageValue)
             .put("allow_strategy_switch", settings.phoneUseAllowStrategySwitch)
             .put("virtual_display_enabled", settings.phoneUseVirtualDisplayEnabled)
+            .put("show_commentary", settings.phoneUseShowCommentary)
+            .put("show_edge_glow", settings.phoneUseShowEdgeGlow)
             .put("display_orientation", settings.agentModeDisplayOrientation.storageValue)
             .put("authorization_enabled", settings.agentModeAuthorizationEnabled)
             .put("authorization_method", settings.agentModeAuthorizationMethod.storageValue)
