@@ -151,6 +151,9 @@ class PhoneUseOverlayControllerTest {
         bitmap.recycle()
     }
 
+    private fun dp(service: android.content.Context, value: Int): Int =
+        (value * service.resources.displayMetrics.density).toInt()
+
     private fun hardwareBitmap(node: android.graphics.RenderNode): android.graphics.Bitmap {
         val hardware = ReflectionHelpers.callStaticMethod<android.graphics.Bitmap>(
             android.graphics.HardwareRenderer::class.java, "createHardwareBitmap",
@@ -163,6 +166,63 @@ class PhoneUseOverlayControllerTest {
         return bitmap
     }
 
+    @Test fun commentaryStaysOnTheRightRailClearOfTheSendZone() {
+        val service = Robolectric.buildService(PhoneUseAccessibilityService::class.java).create().get()
+        val controller = PhoneUseOverlayController(service) { _, _ -> false }
+        try {
+            controller.update(
+                state.copy(
+                    commentaryId = "english",
+                    commentary = "The keyboard is covering the send button. Let me check the current screenshot to locate it, or press ENTER key which sends in WeChat.",
+                ),
+                true,
+            )
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(800))
+            val host = field<View>(controller, "capsule")
+            val params = host.layoutParams as WindowManager.LayoutParams
+            val screenWidth = field<Int>(controller, "screenWidth")
+            val screenHeight = field<Int>(controller, "screenHeight")
+            assertTrue(screenWidth > 0 && screenHeight > 0)
+            assertTrue(params.width * 2 < screenWidth)
+            assertTrue(params.x >= screenWidth / 2)
+            assertTrue(params.x + params.width <= screenWidth)
+            val bottom = params.y + host.height
+            assertTrue("bottom=$bottom screen=$screenHeight", bottom < screenHeight - dp(service, 120))
+            assertTrue(params.y < screenHeight / 2)
+            val shown = ReflectionHelpers.getField<String>(field<View>(controller, "commentary"), "value")
+            assertFalse(shown.contains(Regex("[A-Za-z]")))
+            assertTrue(shown.contains("键盘"))
+            assertTrue(shown.contains("发送"))
+        } finally { controller.dispose(); service.onDestroy() }
+    }
+
+    @Test @Config(sdk = [31]) fun commentaryWindowBlursWhatIsBehindIt() {
+        val service = Robolectric.buildService(PhoneUseAccessibilityService::class.java).create().get()
+        val controller = PhoneUseOverlayController(service) { _, _ -> false }
+        try {
+            controller.update(state, true)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400))
+            val host = field<View>(controller, "capsule")
+            val edge = field<View>(controller, "edge")
+            val params = host.layoutParams as WindowManager.LayoutParams
+            val edgeParams = edge.layoutParams as WindowManager.LayoutParams
+            assertTrue(params.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND != 0)
+            assertTrue(params.blurBehindRadius > 0)
+            assertEquals(0, edgeParams.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+        } finally { controller.dispose(); service.onDestroy() }
+    }
+
+    @Test fun capsuleFillIsTranslucentGlass() {
+        val view = PhoneUseCapsuleLayout(org.robolectric.RuntimeEnvironment.getApplication())
+        view.layout(0, 0, 220, 72)
+        val bitmap = android.graphics.Bitmap.createBitmap(220, 72, android.graphics.Bitmap.Config.ARGB_8888)
+        view.draw(android.graphics.Canvas(bitmap))
+        val pixel = bitmap.getPixel(110, 36)
+        val alpha = android.graphics.Color.alpha(pixel)
+        assertTrue("alpha=$alpha", alpha in 80..220)
+        bitmap.recycle()
+    }
+
     @Test fun chineseEmojiAndLongUnbrokenTextHaveVisibleBoundedLayout() {
         val app = org.robolectric.RuntimeEnvironment.getApplication()
         val view = PhoneUseCommentaryView(app)
@@ -170,7 +230,8 @@ class PhoneUseOverlayControllerTest {
         view.setCommentary("long", longText)
         view.measure(View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.AT_MOST))
         view.layout(0, 0, view.measuredWidth, view.measuredHeight)
-        assertTrue(view.measuredHeight in 56..180)
+        val heightDp = view.measuredHeight / view.resources.displayMetrics.density
+        assertTrue("heightDp=$heightDp", heightDp in 36f..88f)
         val layout = ReflectionHelpers.getField<android.text.StaticLayout>(view, "layout")
         assertTrue(layout.lineCount > 4)
         assertEquals(longText, layout.text.toString())

@@ -154,7 +154,7 @@ internal class PhoneUseOverlayController(
         val edgeParams = windowParams("$WINDOW_PREFIX edge", -1, -1).apply {
             flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
-        val cardParams = windowParams("$WINDOW_PREFIX commentary", capsuleWidth(), -2)
+        val cardParams = windowParams("$WINDOW_PREFIX commentary", commentaryWidth(), -2, blurBehind = true)
         try {
             wm.addView(edgeView, edgeParams)
             wm.addView(host, cardParams)
@@ -304,9 +304,11 @@ internal class PhoneUseOverlayController(
 
     private fun updateKeyboardLift(animate: Boolean) {
         val bounds = keyboardBounds
-        val left = (screenWidth - capsuleWidth()) / 2
-        val overlaps = bounds != null && bounds.right > left && bounds.left < left + capsuleWidth() && !bounds.isEmpty
-        imeBottom = if (overlaps) (screenHeight - bounds!!.top).coerceAtLeast(0) else 0
+        val width = editorWidth()
+        val left = (screenWidth - width - dp(8)).coerceAtLeast(0)
+        val overlaps = bounds != null && !bounds.isEmpty && bounds.right > left && bounds.left < left + width
+        imeBottom = if (overlaps) (screenHeight - bounds.top).coerceAtLeast(0) else 0
+        // Steer uses this lift. Commentary positioning ignores it and stays on the right rail.
         val lift = if (overlaps) (imeBottom + dp(12) - navBottom - dp(76)).coerceAtLeast(0).toFloat() else 0f
         if (lift == targetKeyboardLift) return
         targetKeyboardLift = lift
@@ -341,17 +343,33 @@ internal class PhoneUseOverlayController(
         }
     }
 
-    private fun capsuleWidth(): Int = minOf(screenWidth - dp(28), dp(520)).coerceAtLeast(dp(120))
+    /** Narrow status chip. Kept to the right half so it cannot span the screen. */
+    private fun commentaryWidth(): Int {
+        if (screenWidth <= 0) return dp(148)
+        val maxRightRail = (screenWidth / 2 - dp(12)).coerceAtLeast(dp(96))
+        return dp(148).coerceAtMost(maxRightRail)
+    }
+
+    private fun editorWidth(): Int = minOf((screenWidth - dp(24)).coerceAtLeast(dp(120)), dp(360))
 
     private fun positionCapsule() {
         val host = capsule ?: return
         val params = capsuleParams ?: return
         if (!host.isAttachedToWindow) return
-        val width = capsuleWidth()
-        val bottom = navBottom + dp(76) + keyboardLift.roundToInt()
-        val height = host.measuredHeight.takeIf { it > 0 } ?: dp(56)
-        val x = (screenWidth - width) / 2
-        val y = max(dp(40), screenHeight - bottom - height)
+        val editing = isEditing
+        val width = if (editing) editorWidth() else commentaryWidth()
+        val marginEnd = dp(8)
+        val height = host.measuredHeight.takeIf { it > 0 } ?: if (editing) dp(52) else dp(40)
+        val x = (screenWidth - width - marginEnd).coerceAtLeast(0)
+        val y = if (editing) {
+            val bottom = navBottom + dp(76) + keyboardLift.roundToInt()
+            max(dp(40), screenHeight - bottom - height)
+        } else {
+            val topSafe = dp(64)
+            val sendClearance = navBottom + dp(168)
+            val maxY = (screenHeight - sendClearance - height).coerceAtLeast(topSafe)
+            (screenHeight * 0.28f).roundToInt().coerceIn(topSafe, maxY)
+        }
         if (params.width != width || params.x != x || params.y != y) {
             params.width = width
             params.x = x
@@ -373,7 +391,7 @@ internal class PhoneUseOverlayController(
         handler.postDelayed({ if (!visible && generation == token) detach() }, motionDuration(230))
     }
 
-    private fun windowParams(name: String, width: Int, height: Int) = WindowManager.LayoutParams(
+    private fun windowParams(name: String, width: Int, height: Int, blurBehind: Boolean = false) = WindowManager.LayoutParams(
         width, height, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
@@ -384,6 +402,10 @@ internal class PhoneUseOverlayController(
         softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         if (Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         if (Build.VERSION.SDK_INT >= 30) setFitInsetsTypes(0)
+        if (blurBehind && Build.VERSION.SDK_INT >= 31) {
+            flags = flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+            blurBehindRadius = dp(24)
+        }
     }
 
     /** Hide feedback for a display screenshot without losing the Steer draft or window focus. */
@@ -447,8 +469,9 @@ internal class PhoneUseOverlayController(
             params.alpha = if (suppression > 0) 0f else 1f
             params.flags = if (!isEditing || focusSuppression > 0) params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 else params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-            params.flags = if (!visible || suppression > 0 || inputSuppression > 0) params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                else params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            val interactive = visible && suppression == 0 && inputSuppression == 0 && view.visibility == View.VISIBLE
+            params.flags = if (interactive) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
             if (params.flags != previousFlags || params.alpha != previousAlpha) wm.updateViewLayout(view, params)
         }
     }
