@@ -11,6 +11,8 @@ import android.os.PowerManager
 import com.zhousl.aether.AetherApplication
 import com.zhousl.aether.R
 import com.zhousl.aether.MainActivity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -28,6 +30,7 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -365,7 +368,9 @@ class PhoneUseAccessibilityService : AccessibilityService() {
                 put("snapshot_id", snapshotId)
                 put("node_count", count)
                 put("truncated", truncated)
-                put("stdout", if (count == 0) "No accessible elements. Request a screenshot if this app uses Canvas or a WebView." else "Phone Use element tree. Use node_id for actions; request screenshot only if needed.")
+                put("stdout", if (count == 0) {
+                    "没有可读的无障碍节点。微信或空树请用 text 剪贴板粘贴，不要把失败的 fill_text 当成成功，也不要点软键盘删除。"
+                } else "Phone Use element tree. Use node_id for actions; request screenshot only if needed.")
             }
             return ObservationSnapshot(json, snapshotNodes, windowIds)
         } catch (cause: Throwable) {
@@ -614,10 +619,275 @@ class PhoneUseAccessibilityService : AccessibilityService() {
         actionInvalidated = true
     }
 
-    suspend fun screenshot(displayId: Int, output: File, maxEdge: Int, quality: Int) {
+    /**
+     * WeChat and empty trees often accept ACTION_SET_TEXT without changing the field.
+     * Paste is success only after the node text or a screenshot shows the target.
+     */
+    internal suspend fun enterVerifiedText(
+        displayId: Int,
+        text: String,
+        anchorX: Int?,
+        anchorY: Int?,
+        screenWidth: Int,
+        screenHeight: Int,
+    ): TextEntryOutcome {
+        val host = LiveTextEntryHost(displayId, anchorX, anchorY, screenWidth, screenHeight)
+        try {
+            val outcome = PhoneUseTextEntry(host).enter(text)
+            android.util.Log.i(
+                "PhoneUseText",
+                "verified=${outcome.verified} method=${outcome.method} via=${outcome.verifiedBy} attempts=${outcome.attempts.size}",
+            )
+            return outcome
+        } finally {
+            host.close()
+            actionInvalidated = true
+        }
+    }
+
+    internal fun needsVerifiedClipboardPaste(displayId: Int): Boolean {
+        val candidates = applicationWindows(displayId)
+        if (candidates.isEmpty()) {
+            if (displayId != Display.DEFAULT_DISPLAY) return true
+            val root = rootInActiveWindow ?: return true
+            try {
+                if (isOverlayRoot(root)) return true
+                if (isWeChatPackage(root.packageName?.toString())) return true
+                return !treeHasContent(root)
+            } finally { root.recycle() }
+        }
+        val window = candidates.firstOrNull { it.isFocused } ?: candidates.maxByOrNull { it.layer } ?: return true
+        val root = window.root ?: return true
+        try {
+            if (isWeChatPackage(root.packageName?.toString())) return true
+            return !treeHasContent(root)
+        } finally { root.recycle() }
+    }
+
+    internal fun inputMethodBounds(displayId: Int): Rect? {
+        val window = rawDisplayWindows(displayId)
+            .filter { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+            .maxByOrNull { it.layer } ?: return null
+        return Rect().also(window::getBoundsInScreen).takeUnless { it.isEmpty }
+    }
+
+    internal fun nodeInInputMethod(displayId: Int, nodeId: String): Boolean {
+        val reference = nodes[nodeId] ?: return false
+        return rawDisplayWindows(displayId).any {
+            it.id == reference.windowId && it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+        }
+    }
+
+    private fun applicationWindows(displayId: Int): List<AccessibilityWindowInfo> {
+        val all = displayWindows(displayId, excludeKeyboard = true)
+        val apps = all.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        if (apps.isNotEmpty()) return apps
+        return all.filter {
+            it.type != AccessibilityWindowInfo.TYPE_SYSTEM &&
+                it.type != AccessibilityWindowInfo.TYPE_INPUT_METHOD &&
+                it.type != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY
+        }
+    }
+
+    private fun treeHasContent(node: AccessibilityNodeInfo, depth: Int = 0): Boolean {
+        if (node.isVisibleToUser && node.isEditable) return true
+        if (node.isVisibleToUser && (!node.text.isNullOrBlank() || !node.contentDescription.isNullOrBlank())) return true
+        if (depth >= 48) return false
+        for (index in 0 until node.childCount) {
+            val child = node.getChild(index) ?: continue
+            try {
+                if (treeHasContent(child, depth + 1)) return true
+            } finally { child.recycle() }
+        }
+        return false
+    }
+
+    @Suppress("DEPRECATION")
+    private fun isTextTarget(node: AccessibilityNodeInfo): Boolean {
+        if (node.isPassword) return false
+        if (node.isEditable) return true
+        val actions = node.actionList.map { it.id }
+        if (AccessibilityNodeInfo.ACTION_SET_TEXT in actions || AccessibilityNodeInfo.ACTION_PASTE in actions) return true
+        return node.className?.toString().orEmpty().endsWith("EditText")
+    }
+
+    /** Returns the live node. Caller recycles it. Window roots that are not selected are recycled here. */
+    @Suppress("DEPRECATION")
+    private fun findTextTarget(displayId: Int): AccessibilityNodeInfo? {
+        data class Candidate(val node: AccessibilityNodeInfo, val bottom: Int, val focused: Boolean)
+        val candidates = mutableListOf<Candidate>()
+        var seen = 0
+        fun walk(node: AccessibilityNodeInfo, depth: Int) {
+            if (seen++ >= 1200 || depth > 48) return
+            if (isTextTarget(node) && node.isVisibleToUser) {
+                val rect = Rect().also(node::getBoundsInScreen)
+                if (!rect.isEmpty) candidates += Candidate(node, rect.bottom, node.isFocused)
+            }
+            for (index in 0 until node.childCount) {
+                if (seen >= 1200) return
+                val child = node.getChild(index) ?: continue
+                walk(child, depth + 1)
+                if (candidates.none { it.node === child }) child.recycle()
+            }
+        }
+        val roots = mutableListOf<AccessibilityNodeInfo>()
+        for (window in displayWindows(displayId, excludeKeyboard = true)) {
+            window.root?.let { roots += it }
+        }
+        if (roots.isEmpty() && displayId == Display.DEFAULT_DISPLAY) {
+            rootInActiveWindow?.takeUnless { isOverlayRoot(it) }?.let { roots += it }
+        }
+        try {
+            roots.forEach { walk(it, 0) }
+        } catch (cause: Throwable) {
+            val keep = candidates.map { it.node }.toSet()
+            roots.filter { it !in keep }.forEach { it.recycle() }
+            candidates.filter { it.node !in roots }.forEach { it.node.recycle() }
+            throw cause
+        }
+        val picked = candidates.firstOrNull { it.focused }?.node
+            ?: candidates.maxByOrNull { it.bottom }?.node
+        candidates.filter { it.node !== picked && it.node !in roots }.forEach { it.node.recycle() }
+        roots.filter { it !== picked }.forEach { it.recycle() }
+        return picked
+    }
+
+    private fun labelMatches(text: String?, description: String?, labels: List<String>): Boolean {
+        val values = listOf(text.orEmpty(), description.orEmpty())
+        return labels.any { label -> values.any { value -> value == label || (label.length >= 2 && value.contains(label)) } }
+    }
+
+    @Suppress("DEPRECATION")
+    private inner class LiveTextEntryHost(
+        private val displayId: Int,
+        private val anchorX: Int?,
+        private val anchorY: Int?,
+        requestedWidth: Int,
+        requestedHeight: Int,
+    ) : PhoneUseTextHost {
+        private var field: AccessibilityNodeInfo? = findTextTarget(displayId)
+        override val weChat: Boolean
+        override val emptyTree: Boolean
+        override val density: Float = resources.displayMetrics.density.coerceAtLeast(1f)
+        override val screenWidth: Int = requestedWidth.coerceAtLeast(1)
+        override val screenHeight: Int = requestedHeight.coerceAtLeast(1)
+
+        init {
+            val packages = applicationWindows(displayId).mapNotNull { window ->
+                val root = window.root ?: return@mapNotNull null
+                try {
+                    runCatching { root.packageName?.toString() }.getOrNull()
+                } finally { if (root !== field) root.recycle() }
+            }
+            weChat = packages.any(::isWeChatPackage) || isWeChatPackage(field?.packageName?.toString())
+            emptyTree = field == null
+        }
+
+        fun close() {
+            field?.recycle()
+            field = null
+        }
+
+        override fun writeClipboard(text: String) {
+            val manager = getSystemService(ClipboardManager::class.java)
+                ?: error("Clipboard is unavailable.")
+            manager.setPrimaryClip(ClipData.newPlainText("aether-phone-use", text))
+        }
+
+        override fun fieldText(): String? {
+            val node = field ?: findTextTarget(displayId)?.also { field = it } ?: return null
+            runCatching { node.refresh() }
+            return node.text?.toString().orEmpty()
+        }
+
+        override fun trySetText(text: String): Boolean = performTextAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        })
+
+        override fun trySelectAll(): Boolean {
+            val node = field ?: return false
+            val end = (node.text?.length ?: 0).coerceAtLeast(4096)
+            return node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, end)
+            })
+        }
+
+        override fun tryPaste(): Boolean = performTextAction(AccessibilityNodeInfo.ACTION_PASTE, null)
+
+        override fun tryCut(): Boolean = performTextAction(AccessibilityNodeInfo.ACTION_CUT, null)
+
+        override fun labelCenter(labels: List<String>): Pair<Int, Int>? {
+            fun walk(node: AccessibilityNodeInfo, depth: Int): Pair<Int, Int>? {
+                if (depth > 48) return null
+                if (node.isVisibleToUser && labelMatches(node.text?.toString(), node.contentDescription?.toString(), labels)) {
+                    val rect = Rect().also(node::getBoundsInScreen)
+                    if (!rect.isEmpty) return rect.centerX() to rect.centerY()
+                }
+                for (index in 0 until node.childCount) {
+                    val child = node.getChild(index) ?: continue
+                    try {
+                        walk(child, depth + 1)?.let { return it }
+                    } finally { if (child !== field) child.recycle() }
+                }
+                return null
+            }
+            for (window in displayWindows(displayId, excludeKeyboard = false)) {
+                val root = window.root ?: continue
+                try {
+                    walk(root, 0)?.let { return it }
+                } finally { if (root !== field) root.recycle() }
+            }
+            return null
+        }
+
+        override fun anchor(): Pair<Int, Int> {
+            val keyboardTop = keyboardTop()
+            val fromField = field?.let { node ->
+                val rect = Rect().also(node::getBoundsInScreen)
+                if (rect.isEmpty) null else rect.centerX() to rect.centerY()
+            }
+            var x = anchorX ?: fromField?.first ?: screenWidth / 2
+            var y = anchorY ?: fromField?.second ?: keyboardTop?.let { top ->
+                (top - 36 * density).toInt()
+            } ?: (screenHeight * 0.86f).toInt()
+            if (keyboardTop != null && y >= keyboardTop) y = (keyboardTop - 36 * density).toInt()
+            return x.coerceIn(0, screenWidth - 1) to y.coerceIn(0, screenHeight - 1)
+        }
+
+        override fun keyboardTop(): Int? = inputMethodBounds(displayId)?.top
+
+        override suspend fun tap(x: Int, y: Int) {
+            gesture(displayId, x, y, duration = 60)
+        }
+
+        override suspend fun longPress(x: Int, y: Int) {
+            val endX = if (x < screenWidth - 2) x + 1 else (x - 1).coerceAtLeast(0)
+            gesture(displayId, x, y, endX, y, duration = 900)
+        }
+
+        override suspend fun capture(): Bitmap? {
+            if (Build.VERSION.SDK_INT < 30) return null
+            return try {
+                withTimeoutOrNull(2_500) { captureDisplayBitmap(displayId) }
+            } catch (cause: CancellationException) {
+                throw cause
+            } catch (_: Throwable) {
+                null
+            }
+        }
+
+        private fun performTextAction(action: Int, arguments: Bundle?): Boolean {
+            val node = field ?: return false
+            node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            return node.performAction(action, arguments)
+        }
+    }
+
+    private suspend fun captureDisplayBitmap(displayId: Int): Bitmap {
         check(Build.VERSION.SDK_INT >= 30) { "Accessibility screenshots require Android 11 or later. Element actions remain available." }
         val capture: suspend () -> Bitmap = { withTimeout(5000) {
-            suspendCancellableCoroutine<Bitmap> { continuation ->
+            suspendCancellableCoroutine { continuation ->
                 takeScreenshot(displayId, mainExecutor, object : TakeScreenshotCallback {
                     override fun onSuccess(screenshot: ScreenshotResult) {
                         val hardware = screenshot.hardwareBuffer
@@ -637,10 +907,13 @@ class PhoneUseAccessibilityService : AccessibilityService() {
                     }
                 })
             }
-        }
-        }
+        } }
         val overlay = overlayController.takeIf { displayId == Display.DEFAULT_DISPLAY }
-        val bitmap = if (overlay != null) overlay.withoutVisuals(capture) else capture()
+        return if (overlay != null) overlay.withoutVisuals(capture) else capture()
+    }
+
+    suspend fun screenshot(displayId: Int, output: File, maxEdge: Int, quality: Int) {
+        val bitmap = captureDisplayBitmap(displayId)
         try {
             withContext(Dispatchers.IO) {
                 val scale = (maxEdge.toFloat() / maxOf(bitmap.width, bitmap.height)).coerceAtMost(1f)

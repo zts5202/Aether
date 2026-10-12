@@ -237,7 +237,7 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
             put(
                 "properties",
                 JSONObject().apply {
-                    put("action", stringProperty("One of: list_apps, start, observe, tree, status, launch, tap, click, long_click, scroll, swipe, key, text, screenshot, stop."))
+                    put("action", stringProperty("One of: list_apps, start, observe, tree, status, launch, tap, click, long_click, scroll, swipe, key, text, screenshot, stop. fill_text is an alias of text."))
                     put("return_to_aether", booleanProperty("For stop, foreground mode only: optionally return the user to Aether after finishing. Defaults to false; omit to leave the controlled app visible."))
                     put("input_strategy", stringProperty("Optional observation override for this action: element_tree_first or screenshot_first. Requires alternative strategy switching to be allowed."))
                     put("output_strategy", stringProperty("Optional output strategy for this action: element_first or gesture_first. node_id selects elements; coordinates select gestures. Requires switching permission for alternatives."))
@@ -269,7 +269,10 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
                         "text",
                         stringProperty(
                             "For text: replace the contents of an editable node_id (preferred), or the focused field. Unicode is supported. " +
-                                "Empty text clears the field. Without node_id, a focused editable field is required.",
+                                "Empty text clears the field. Without node_id, a focused editable field is required. " +
+                                "WeChat and empty accessibility trees paste the clipboard instead: ACTION_PASTE / ACTION_SET_TEXT, then a real long-press and 粘贴. " +
+                                "Optional x,y (normalized 0..1000) is the input field when no editable node exists. " +
+                                "Success requires text_verified. Do not tap the soft keyboard to delete, and do not ask the user to paste.",
                         ),
                     )
                 },

@@ -18,6 +18,9 @@ import com.zhousl.aether.agentmode.AgentModeServiceLauncher
 import com.zhousl.aether.agentmode.IAetherAgentModeService
 import com.zhousl.aether.phoneuse.PhoneUseElementException
 import com.zhousl.aether.phoneuse.PhoneUseAccessibilityService
+import com.zhousl.aether.phoneuse.keyboardTapReflection
+import com.zhousl.aether.phoneuse.normalizePhoneUseAction
+import com.zhousl.aether.phoneuse.shouldRejectKeyboardTap
 import com.zhousl.aether.termux.TermuxBashTool
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -249,7 +252,7 @@ class AgentModeController(
                         message = ui(R.string.agent_mode_invalid_json),
                     )
                 }
-            val action = arguments.optString("action").trim().lowercase()
+            val action = normalizePhoneUseAction(arguments.optString("action").trim().lowercase())
             diagnosticLogger.event(
                 category = "agent_mode",
                 event = "action_start",
@@ -295,35 +298,44 @@ class AgentModeController(
                         val nodeId = arguments.optString("node_id").trim()
                         val text = arguments.optString("text")
                         if (action == "text") require(arguments.has("text")) { "Missing required 'text' argument." }
-                        var targetResolution: String? = null
-                        if (usesElement && nodeId.isNotBlank()) {
-                            val rebound = withContext(Dispatchers.Main) {
-                                PhoneUseAccessibilityService.requireConnected().nodeAction(
-                                    displayId, nodeId, action, text, arguments.optString("direction", "forward"),
-                                )
-                            }
-                            targetResolution = if (rebound) "rebound_unique_match" else "refreshed_original_node"
-                        } else if (action == "text") {
-                            withContext(Dispatchers.Main) {
-                                PhoneUseAccessibilityService.requireConnected().setFocusedText(displayId, text)
-                            }
+                        val service = PhoneUseAccessibilityService.requireConnected()
+                        val guarded = withContext(Dispatchers.Main) { service.needsVerifiedClipboardPaste(displayId) }
+                        if (action == "text" && guarded) {
+                            verifiedClipboardText(service, displayId, text, arguments) { observation(it) }
+                        } else if (guarded && action in setOf("tap", "click", "long_click") &&
+                            rejectsGuardedKeyboardTap(service, displayId, nodeId, arguments, usesElement)) {
+                            keyboardEditRejected(action)
                         } else {
-                            require(action in setOf("tap", "click", "long_click")) { "scroll requires node_id." }
-                            when (val point = resolvePoint(arguments, "x", "y")) {
-                                is ResolvedPoint.Invalid -> error(point.message)
-                                is ResolvedPoint.Valid -> {
-                                    withContext(Dispatchers.Main) {
-                                        PhoneUseAccessibilityService.requireConnected().gesture(
-                                            displayId, point.x, point.y, duration = if (action == "long_click") 700 else 80,
-                                        )
+                            var targetResolution: String? = null
+                            if (usesElement && nodeId.isNotBlank()) {
+                                val rebound = withContext(Dispatchers.Main) {
+                                    service.nodeAction(
+                                        displayId, nodeId, action, text, arguments.optString("direction", "forward"),
+                                    )
+                                }
+                                targetResolution = if (rebound) "rebound_unique_match" else "refreshed_original_node"
+                            } else if (action == "text") {
+                                withContext(Dispatchers.Main) {
+                                    service.setFocusedText(displayId, text)
+                                }
+                            } else {
+                                require(action in setOf("tap", "click", "long_click")) { "scroll requires node_id." }
+                                when (val point = resolvePoint(arguments, "x", "y")) {
+                                    is ResolvedPoint.Invalid -> error(point.message)
+                                    is ResolvedPoint.Valid -> {
+                                        withContext(Dispatchers.Main) {
+                                            service.gesture(
+                                                displayId, point.x, point.y, duration = if (action == "long_click") 700 else 80,
+                                            )
+                                        }
+                                        updateCursorPosition(point.x, point.y)
                                     }
-                                    updateCursorPosition(point.x, point.y)
                                 }
                             }
+                            JSONObject(observation(350)).apply {
+                                targetResolution?.let { put("target_resolution", it) }
+                            }.toString()
                         }
-                        JSONObject(observation(350)).apply {
-                            targetResolution?.let { put("target_resolution", it) }
-                        }.toString()
                     }
                     "swipe" -> {
                         val displayId = ensureDisplay(settings)
@@ -1456,6 +1468,92 @@ class AgentModeController(
                 "Both '$xKey' and '$yKey' are required, using normalized 0..$AgentModeNormalizedCoordinateMax coordinates.",
             )
         }
+    }
+
+    private suspend fun verifiedClipboardText(
+        service: PhoneUseAccessibilityService,
+        displayId: Int,
+        text: String,
+        arguments: JSONObject,
+        observe: suspend (Long) -> String,
+    ): String {
+        val anchor = optionalTextAnchor(arguments)
+        val state = _displayState.value
+        val outcome = withContext(Dispatchers.Main) {
+            service.enterVerifiedText(
+                displayId = displayId,
+                text = text,
+                anchorX = anchor?.first,
+                anchorY = anchor?.second,
+                screenWidth = state.width,
+                screenHeight = state.height,
+            )
+        }
+        val observed = try {
+            observe(if (outcome.verified) 300 else 150)
+        } catch (cause: CancellationException) {
+            throw cause
+        } catch (_: Throwable) {
+            null
+        }
+        val result = JSONObject(observed ?: "{}")
+        if (outcome.verified) {
+            result.put("ok", true)
+            result.put("action_succeeded", true)
+            result.put("text_verified", true)
+            result.put("text_method", outcome.method)
+            result.put("verified_by", outcome.verifiedBy)
+            result.put("stdout", "文字已写入输入框，校验方式：${outcome.verifiedBy}，手段：${outcome.method}。")
+        } else {
+            result.put("ok", false)
+            result.put("action", "text")
+            result.put("action_succeeded", false)
+            result.put("error_code", "text_not_verified")
+            result.put("text_verified", false)
+            result.put("errmsg", outcome.reflection)
+            result.put("reflection", outcome.reflection)
+            result.put("stdout", outcome.reflection)
+            result.put("attempts", JSONArray(outcome.attempts))
+        }
+        return result.toString()
+    }
+
+    private fun optionalTextAnchor(arguments: JSONObject): Pair<Int, Int>? {
+        if (!arguments.has("x") && !arguments.has("y")) return null
+        return when (val point = resolvePoint(arguments, "x", "y")) {
+            is ResolvedPoint.Invalid -> error(point.message)
+            is ResolvedPoint.Valid -> point.x to point.y
+        }
+    }
+
+    private suspend fun rejectsGuardedKeyboardTap(
+        service: PhoneUseAccessibilityService,
+        displayId: Int,
+        nodeId: String,
+        arguments: JSONObject,
+        usesElement: Boolean,
+    ): Boolean {
+        val keyboard = withContext(Dispatchers.Main) { service.inputMethodBounds(displayId) }
+        if (usesElement && nodeId.isNotBlank()) {
+            return withContext(Dispatchers.Main) { service.nodeInInputMethod(displayId, nodeId) }
+        }
+        if (!arguments.has("x") || !arguments.has("y")) return false
+        val point = resolvePoint(arguments, "x", "y")
+        return point is ResolvedPoint.Valid && shouldRejectKeyboardTap(true, keyboard, point.x, point.y)
+    }
+
+    private fun keyboardEditRejected(action: String): String {
+        val reflection = keyboardTapReflection()
+        return JSONObject().apply {
+            put("ok", false)
+            put("action", action)
+            put("action_succeeded", false)
+            put("error_code", "keyboard_tap_rejected")
+            put("text_verified", false)
+            put("errmsg", reflection)
+            put("reflection", reflection)
+            put("stdout", reflection)
+        }.toString()
     }
 
     private fun invalidArguments(message: String): String =
