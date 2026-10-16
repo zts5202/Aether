@@ -1236,6 +1236,14 @@ function xiaomiApiKeyEndpointMismatch(baseUrl: string, apiKey: string): string |
 function withXiaomiMiMoTransport(model: Model<string>, config: ModelConfig): Model<string> {
   const baseUrl = config.base_url || model.baseUrl;
   if (!isXiaomiMiMoEndpoint(baseUrl, config.pi_provider_id)) return model;
+  const compat = {
+    ...(model.compat ?? {}),
+    thinkingFormat: "deepseek",
+    supportsReasoningEffort: false,
+    supportsDeveloperRole: false,
+    requiresReasoningContentOnAssistantMessages: true,
+    maxTokensField: "max_completion_tokens",
+  } as const;
   return {
     ...model,
     reasoning: true,
@@ -1247,15 +1255,8 @@ function withXiaomiMiMoTransport(model: Model<string>, config: ModelConfig): Mod
       high: "high",
       xhigh: "xhigh",
       max: "max",
-    },
-    compat: {
-      ...(model.compat ?? {}),
-      thinkingFormat: "deepseek",
-      supportsReasoningEffort: false,
-      supportsDeveloperRole: false,
-      requiresReasoningContentOnAssistantMessages: true,
-      maxTokensField: "max_completion_tokens",
-    },
+    } as const,
+    compat: compat as Model<"openai-completions">["compat"],
   } as Model<string>;
 }
 
