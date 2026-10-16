@@ -498,6 +498,8 @@
     <string name="provider_form_environment_value">Value</string>
     <string name="provider_form_remove_environment">Remove provider environment variable</string>
     <string name="provider_form_api_key">API Key</string>
+    <string name="provider_form_test_connection">测试连接</string>
+    <string name="provider_form_testing_connection">正在测试连接…</string>
     <string name="provider_form_base_url">Base URL</string>
     <string name="provider_form_manual_model_ids">Manual model IDs</string>
     <string name="provider_form_user_agent">User-Agent</string>

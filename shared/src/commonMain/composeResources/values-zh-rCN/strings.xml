@@ -496,6 +496,8 @@
     <string name="provider_form_environment_value">值</string>
     <string name="provider_form_remove_environment">移除提供方环境变量</string>
     <string name="provider_form_api_key">API Key</string>
+    <string name="provider_form_test_connection">测试连接</string>
+    <string name="provider_form_testing_connection">正在测试连接…</string>
     <string name="provider_form_base_url">基础 URL</string>
     <string name="provider_form_manual_model_ids">手动模型 ID</string>
     <string name="provider_form_user_agent">User-Agent</string>

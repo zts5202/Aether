@@ -1,6 +1,8 @@
 package com.zhousl.aether.data.pi
 
 import com.zhousl.aether.data.AppSettings
+import com.zhousl.aether.data.ProviderAuthMethod
+import com.zhousl.aether.data.xiaomiApiKeyEndpointMismatchMessage
 import com.zhousl.aether.data.LlmImagePart
 import com.zhousl.aether.data.LlmMessage
 import com.zhousl.aether.data.LlmTextPart
@@ -25,6 +27,10 @@ class PiCompletionClient(
         modelsDevLimits: ModelsDevModelLimits? = null,
         onEvent: (suspend (String, JSONObject) -> Unit)? = null,
     ): Result<PiCompletionResult> = runCatching {
+        if (settings.providerAuthMethod == ProviderAuthMethod.ApiKey) {
+            xiaomiApiKeyEndpointMismatchMessage(settings.baseUrl, settings.apiKey)
+                ?.let { message -> error(message) }
+        }
         val payload = JSONObject().apply {
             put(
                 "model_config",

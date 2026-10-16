@@ -92,10 +92,10 @@ object PiProviderCatalog {
         builtin("moonshotai-cn", "Moonshot AI CN", "https://api.moonshot.cn/v1", "kimi-k2-thinking", category = "China"),
         builtin("minimax", "MiniMax", "https://api.minimax.io/anthropic", "MiniMax-M2.7", category = "China"),
         builtin("minimax-cn", "MiniMax CN", "https://api.minimaxi.com/anthropic", "MiniMax-M2.7", category = "China"),
-        builtin("xiaomi", "Xiaomi", "https://api.xiaomimimo.com/v1", "mimo-v2.5-pro", category = "China"),
-        builtin("xiaomi-token-plan-cn", "Xiaomi Token Plan CN", "https://token-plan-cn.xiaomimimo.com/v1", "mimo-v2.5-pro", category = "China"),
-        builtin("xiaomi-token-plan-ams", "Xiaomi Token Plan AMS", "https://token-plan-ams.xiaomimimo.com/v1", "mimo-v2.5-pro", category = "China"),
-        builtin("xiaomi-token-plan-sgp", "Xiaomi Token Plan SGP", "https://token-plan-sgp.xiaomimimo.com/v1", "mimo-v2.5-pro", category = "China"),
+        builtin("xiaomi", "Xiaomi", "https://api.xiaomimimo.com/v1", "mimo-v2.6-flash", category = "China"),
+        builtin("xiaomi-token-plan-cn", "Xiaomi Token Plan CN", "https://token-plan-cn.xiaomimimo.com/v1", "mimo-v2.6-flash", category = "China"),
+        builtin("xiaomi-token-plan-ams", "Xiaomi Token Plan AMS", "https://token-plan-ams.xiaomimimo.com/v1", "mimo-v2.6-flash", category = "China"),
+        builtin("xiaomi-token-plan-sgp", "Xiaomi Token Plan SGP", "https://token-plan-sgp.xiaomimimo.com/v1", "mimo-v2.6-flash", category = "China"),
         builtin("ant-ling", "Ant Ling", "https://api.ant-ling.com/v1", "Ling-2.6-flash", category = "China"),
     )
 

@@ -52,12 +52,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -87,8 +89,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import com.zhousl.aether.data.LlmProviderConfig
+import com.zhousl.aether.data.ProviderConnectionTester
 import com.zhousl.aether.data.LlmCustomHeader
 import com.zhousl.aether.data.DefaultPiProviderId
 import com.zhousl.aether.data.PiProviderCatalog
@@ -552,6 +556,8 @@ fun ProviderConfigurationForm(
                     onValueChange = { state.apiKey = it },
                     isSecret = true,
                 )
+                ProviderFormDivider()
+                ProviderConnectionTestSection(state)
             }
 
             ProviderAuthMethod.OAuth -> ProviderOAuthField(
@@ -806,6 +812,8 @@ fun ProviderAuthenticationSetup(
                                 resetToDefaultWhenBlank = true,
                             )
                         }
+                        ProviderFormDivider()
+                        ProviderConnectionTestSection(state)
                     }
                 }
             }
@@ -1597,6 +1605,85 @@ private fun normalizeModelIds(values: List<String>): List<String> =
         .filter(String::isNotEmpty)
         .distinct()
         .sortedByPreferredModelName()
+
+@Composable
+private fun ProviderConnectionTestSection(state: ProviderFormState) {
+    val tester = remember { ProviderConnectionTester() }
+    DisposableEffect(tester) {
+        onDispose { tester.close() }
+    }
+    var testing by remember { mutableStateOf(false) }
+    var resultMessage by remember { mutableStateOf("") }
+    var resultSuccess by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val testingLabel = stringResource(Res.string.provider_form_testing_connection)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(if (testing) AetherSurfaceHigh else ProviderFormPrimary)
+                .clickable(enabled = !testing) {
+                    if (testing) return@clickable
+                    testing = true
+                    resultMessage = ""
+                    scope.launch {
+                        val outcome = tester.test(
+                            baseUrl = state.baseUrl.ifBlank { state.selectedDefinition.defaultBaseUrl },
+                            apiKey = state.apiKey,
+                            modelId = state.effectiveModelId.ifBlank {
+                                state.selectedDefinition.defaultModelId
+                            },
+                            providerId = state.selectedDefinition.id,
+                            userAgent = state.userAgent,
+                            customHeaders = state.customHeaders,
+                        )
+                        resultSuccess = outcome.success
+                        resultMessage = outcome.message
+                        testing = false
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (testing) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = ProviderFormPrimary,
+                    )
+                    Text(
+                        text = testingLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = AetherOnSurface,
+                    )
+                }
+            } else {
+                Text(
+                    text = stringResource(Res.string.provider_form_test_connection),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = AetherOnPrimary,
+                )
+            }
+        }
+        if (resultMessage.isNotBlank()) {
+            Text(
+                text = resultMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (resultSuccess) AetherPrimary else MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
 
 @Composable
 private fun ProviderFormCard(

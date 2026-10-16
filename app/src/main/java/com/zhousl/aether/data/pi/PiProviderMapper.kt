@@ -5,6 +5,7 @@ import com.zhousl.aether.data.LlmCustomHeader
 import com.zhousl.aether.data.LlmTokenUsage
 import com.zhousl.aether.data.ModelsDevModelLimits
 import com.zhousl.aether.data.PiProviderCatalog
+import com.zhousl.aether.data.isXiaomiMiMoEndpoint
 import com.zhousl.aether.data.normalizeLlmUserAgent
 import com.zhousl.aether.data.normalizeReasoningEffort
 import com.zhousl.aether.data.ProviderAuthMethod
@@ -128,8 +129,16 @@ fun AppSettings.toPiModelConfig(
         providerAuthMethod
     }
     val effort = toPiThinkingLevel()
-    val reasoningEnabled = isReasoningModel ?: (
-        effort != "off" || thinkingLevelMap["off"] == "none"
+    // MiMo thinking defaults to enabled and is toggled with thinking.type, so the
+    // model stays a reasoning model even when the selected level is off.
+    val xiaomiEndpoint = isXiaomiMiMoEndpoint(
+        baseUrl.trim().ifBlank { definition.defaultBaseUrl },
+        definition.id,
+    )
+    val reasoningEnabled = xiaomiEndpoint || (
+        isReasoningModel ?: (
+            effort != "off" || thinkingLevelMap["off"] == "none"
+        )
     )
     return PiModelConfig(
         providerType = if (definition.isBuiltIn) "builtin" else "custom",
