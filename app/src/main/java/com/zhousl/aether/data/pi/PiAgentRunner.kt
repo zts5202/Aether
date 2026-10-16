@@ -9,6 +9,8 @@ import com.zhousl.aether.data.AetherSelfManagementTool
 import com.zhousl.aether.data.AetherToolExecutor
 import com.zhousl.aether.data.AgentToolEvent
 import com.zhousl.aether.data.AppSettings
+import com.zhousl.aether.data.ProviderAuthMethod
+import com.zhousl.aether.data.xiaomiApiKeyEndpointMismatchMessage
 import com.zhousl.aether.data.LlmMessage
 import com.zhousl.aether.data.LlmTextPart
 import com.zhousl.aether.data.LocalRuntimeId
@@ -88,6 +90,10 @@ class PiAgentRunner(
         )
         return try {
             runCatchingPreservingCancellation {
+                if (settings.providerAuthMethod == ProviderAuthMethod.ApiKey) {
+                    xiaomiApiKeyEndpointMismatchMessage(settings.baseUrl, settings.apiKey)
+                        ?.let { message -> error(message) }
+                }
                 val resolvedSessionId = sessionId.ifBlank {
                     "aether-session-${System.currentTimeMillis()}"
                 }

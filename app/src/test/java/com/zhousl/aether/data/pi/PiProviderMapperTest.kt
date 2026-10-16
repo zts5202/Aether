@@ -3,6 +3,7 @@ package com.zhousl.aether.data.pi
 import com.zhousl.aether.data.AppSettings
 import com.zhousl.aether.data.AetherLlmUserAgent
 import com.zhousl.aether.data.LlmCustomHeader
+import com.zhousl.aether.data.PiProviderCatalog
 import com.zhousl.aether.data.LlmImagePart
 import com.zhousl.aether.data.LlmMessage
 import com.zhousl.aether.data.LlmTextPart
@@ -15,6 +16,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PiProviderMapperTest {
+    @Test
+    fun xiaomiDefaultsToMimoV26FlashAndKeepsThinkingTransportWhenOff() {
+        assertEquals("mimo-v2.6-flash", PiProviderCatalog.find("xiaomi")!!.defaultModelId)
+        assertEquals("mimo-v2.6-flash", PiProviderCatalog.find("xiaomi-token-plan-cn")!!.defaultModelId)
+        assertEquals("mimo-v2.6-flash", PiProviderCatalog.find("xiaomi-token-plan-ams")!!.defaultModelId)
+        assertEquals("mimo-v2.6-flash", PiProviderCatalog.find("xiaomi-token-plan-sgp")!!.defaultModelId)
+
+        val config = AppSettings(
+            piProviderId = "xiaomi",
+            baseUrl = "https://api.xiaomimimo.com/v1",
+            modelId = "mimo-v2.5-pro",
+            reasoningEffort = "off",
+        ).toPiModelConfig(isReasoningModel = false)
+
+        assertEquals("mimo-v2.5-pro", config.modelId)
+        assertTrue(config.reasoning)
+    }
+
     @Test
     fun builtInOpenAiMapsDirectlyToPiCatalog() {
         val config = AppSettings(

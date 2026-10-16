@@ -1194,6 +1194,71 @@ function createAetherModel(config: ModelConfig): Model<string> {
   } as Model<string>;
 }
 
+const XIAOMI_TOKEN_PLAN_KEY_ON_PAYG_MESSAGE =
+  "API Key 与接口不匹配：以 tp- 开头的密钥是 Token Plan 密钥，不能用于按量付费接口 api.xiaomimimo.com。请改用 Token Plan 地址，例如 https://token-plan-cn.xiaomimimo.com/v1。";
+const XIAOMI_PAYG_KEY_ON_TOKEN_PLAN_MESSAGE =
+  "API Key 与接口不匹配：以 sk- 开头的密钥是按量付费密钥，不能用于 Token Plan 接口。请改用按量付费地址 https://api.xiaomimimo.com/v1。";
+
+function endpointHost(baseUrl: string): string {
+  const trimmed = baseUrl.trim();
+  const withoutScheme = trimmed.includes("://") ? trimmed.slice(trimmed.indexOf("://") + 3) : trimmed;
+  const authority = (withoutScheme.split(/[/?#]/, 1)[0] ?? "");
+  const hostPort = authority.includes("@") ? authority.slice(authority.lastIndexOf("@") + 1) : authority;
+  return hostPort.replace(/:\d+$/, "").toLowerCase();
+}
+
+function isXiaomiMiMoEndpoint(baseUrl: string, providerId: string): boolean {
+  const host = endpointHost(baseUrl);
+  if (host === "xiaomimimo.com" || host.endsWith(".xiaomimimo.com")) return true;
+  if (host === "mimo.mi.com" || host.endsWith(".mimo.mi.com")) return true;
+  const id = providerId.trim().toLowerCase();
+  return id === "xiaomi" || id.startsWith("xiaomi-token-plan");
+}
+
+function xiaomiApiKeyEndpointMismatch(baseUrl: string, apiKey: string): string | undefined {
+  const host = endpointHost(baseUrl);
+  const key = apiKey.trim();
+  if (!key || !host.includes("xiaomimimo.com")) return undefined;
+  const tokenPlan = host.startsWith("token-plan-") || host.startsWith("token-plan.");
+  const payAsYouGo = host === "api.xiaomimimo.com";
+  if (key.toLowerCase().startsWith("tp-") && payAsYouGo) return XIAOMI_TOKEN_PLAN_KEY_ON_PAYG_MESSAGE;
+  if (key.toLowerCase().startsWith("sk-") && tokenPlan) return XIAOMI_PAYG_KEY_ON_TOKEN_PLAN_MESSAGE;
+  return undefined;
+}
+
+/**
+ * Pi 0.99.2's Xiaomi catalog uses DeepSeek-style `thinking.type`, but URL
+ * auto-detection still marks xiaomimimo.com as a standard OpenAI endpoint.
+ * That sends `role: "developer"` and `reasoning_effort` on every reasoning
+ * request. MiMo Chat Completions only accepts `thinking: {type}` (on by
+ * default), `max_completion_tokens`, and replayed `reasoning_content`.
+ */
+function withXiaomiMiMoTransport(model: Model<string>, config: ModelConfig): Model<string> {
+  const baseUrl = config.base_url || model.baseUrl;
+  if (!isXiaomiMiMoEndpoint(baseUrl, config.pi_provider_id)) return model;
+  return {
+    ...model,
+    reasoning: true,
+    thinkingLevelMap: {
+      off: "off",
+      minimal: "minimal",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+      max: "max",
+    },
+    compat: {
+      ...(model.compat ?? {}),
+      thinkingFormat: "deepseek",
+      supportsReasoningEffort: false,
+      supportsDeveloperRole: false,
+      requiresReasoningContentOnAssistantMessages: true,
+      maxTokensField: "max_completion_tokens",
+    },
+  } as Model<string>;
+}
+
 function buildModels(config: ModelConfig): {
   models: MutableModels;
   model: Model<string>;
@@ -1204,6 +1269,8 @@ function buildModels(config: ModelConfig): {
   const compatibilityFallbackState: CompatibilityFallbackState = {
     developerRoleUnsupportedDetected: false,
   };
+  const apiKeyMismatch = xiaomiApiKeyEndpointMismatch(config.base_url, config.api_key ?? "");
+  if (apiKeyMismatch) throw new Error(apiKeyMismatch);
   bridgeDebug("build_models_start", {
     provider_type: config.provider_type,
     pi_provider_id: config.pi_provider_id,
@@ -1317,9 +1384,12 @@ function buildModels(config: ModelConfig): {
     } as Model<string>;
     // models.dev is the capability source of truth; Pi's bundled catalog only
     // supplies transport details (api, compat, base URL) it cannot describe.
-    const model = withExplicitThinkingLevelMap(
-      applyModelsDevMetadata(catalogModel, config.models_dev),
-      config.thinking_level_map,
+    const model = withXiaomiMiMoTransport(
+      withExplicitThinkingLevelMap(
+        applyModelsDevMetadata(catalogModel, config.models_dev),
+        config.thinking_level_map,
+      ),
+      config,
     );
     const servingProvider = providerServingModel(provider, model);
     models.setProvider(servingProvider);
@@ -1327,9 +1397,12 @@ function buildModels(config: ModelConfig): {
   }
 
   const models = createModels();
-  const model = withExplicitThinkingLevelMap(
-    applyModelsDevMetadata(createAetherModel(config), config.models_dev),
-    config.thinking_level_map,
+  const model = withXiaomiMiMoTransport(
+    withExplicitThinkingLevelMap(
+      applyModelsDevMetadata(createAetherModel(config), config.models_dev),
+      config.thinking_level_map,
+    ),
+    config,
   );
   bridgeDebug("build_models_path", { path: "custom", pi_api: config.pi_api });
   const headers = config.custom_headers ?? {};

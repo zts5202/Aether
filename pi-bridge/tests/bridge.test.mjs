@@ -2966,3 +2966,140 @@ test("rejects non-OpenAI custom Pi APIs", async () => {
     );
   }
 });
+
+test("rejects a Xiaomi key prefix that does not match the endpoint", async () => {
+  const client = new BridgeClient();
+  await assert.rejects(
+    client.request("xiaomi-key-mismatch", "complete_once", {
+      model_config: {
+        provider_type: "builtin",
+        provider_config_id: "xiaomi",
+        pi_provider_id: "xiaomi",
+        pi_api: "builtin",
+        model_id: "mimo-v2.6-flash",
+        base_url: "https://api.xiaomimimo.com/v1",
+        api_key: "tp-plan-key",
+        reasoning: true,
+      },
+      messages: [userMessage("hello")],
+      reasoning: "off",
+    }),
+    /tp- 开头的密钥是 Token Plan 密钥/,
+  );
+  await assert.rejects(
+    client.request("xiaomi-key-mismatch-reverse", "complete_once", {
+      model_config: {
+        provider_type: "builtin",
+        provider_config_id: "xiaomi-token-plan-cn",
+        pi_provider_id: "xiaomi-token-plan-cn",
+        pi_api: "builtin",
+        model_id: "mimo-v2.6-flash",
+        base_url: "https://token-plan-cn.xiaomimimo.com/v1",
+        api_key: "sk-payg-key",
+        reasoning: true,
+      },
+      messages: [userMessage("hello")],
+      reasoning: "high",
+    }),
+    /sk- 开头的密钥是按量付费密钥/,
+  );
+});
+
+test("sends MiMo thinking.type, max_completion_tokens, and replayed reasoning_content", async (t) => {
+  const receivedBodies = [];
+  const server = createServer((request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      receivedBodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      writeSuccessfulChatCompletion(response, "MIMO_OK", "mimo-v2.6-flash");
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const baseUrl = `http://127.0.0.1:${address.port}/v1`;
+  const modelConfig = {
+    provider_type: "builtin",
+    provider_config_id: "xiaomi",
+    pi_provider_id: "xiaomi",
+    pi_api: "builtin",
+    model_id: "mimo-v2.6-flash",
+    base_url: baseUrl,
+    api_key: "sk-test",
+    reasoning: true,
+    max_retries: 0,
+  };
+  const client = new BridgeClient();
+  const enabled = await client.request("mimo-thinking-on", "complete_once", {
+    model_config: modelConfig,
+    system_prompt: "Reply briefly.",
+    messages: [userMessage("hello")],
+    reasoning: "high",
+  });
+  assert.equal(enabled.assistant_text, "MIMO_OK", JSON.stringify(enabled));
+
+  const disabled = await client.request("mimo-thinking-off", "complete_once", {
+    model_config: modelConfig,
+    system_prompt: "Reply briefly.",
+    messages: [
+      userMessage("hello"),
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "calling a tool" }],
+        provider_payload: {
+          piAssistantMessage: {
+            role: "assistant",
+            content: [
+              {
+                type: "thinking",
+                thinking: "previous reasoning",
+                thinkingSignature: "reasoning_content",
+              },
+              { type: "text", text: "calling a tool" },
+              {
+                type: "toolCall",
+                id: "call_1",
+                name: "echo",
+                arguments: { value: "x" },
+              },
+            ],
+            api: "openai-completions",
+            provider: "xiaomi",
+            model: "mimo-v2.6-flash",
+            stopReason: "toolUse",
+            timestamp: 1,
+          },
+        },
+      },
+      {
+        role: "toolResult",
+        tool_call_id: "call_1",
+        tool_name: "echo",
+        text: "ok",
+      },
+      userMessage("thanks"),
+    ],
+    reasoning: "off",
+  });
+  assert.equal(disabled.assistant_text, "MIMO_OK", JSON.stringify(disabled));
+
+  assert.equal(receivedBodies.length, 2);
+  const [thinkingOn, thinkingOff] = receivedBodies;
+  assert.equal(thinkingOn.model, "mimo-v2.6-flash");
+  assert.deepEqual(thinkingOn.thinking, { type: "enabled" });
+  assert.equal(thinkingOn.reasoning_effort, undefined);
+  assert.equal(typeof thinkingOn.max_completion_tokens, "number");
+  assert.equal(thinkingOn.max_tokens, undefined);
+  assert.equal(thinkingOn.messages[0].role, "system");
+  assert.equal(thinkingOn.messages.some((message) => message.role === "developer"), false);
+
+  assert.deepEqual(thinkingOff.thinking, { type: "disabled" });
+  assert.equal(thinkingOff.reasoning_effort, undefined);
+  assert.equal(thinkingOff.max_tokens, undefined);
+  const replayed = thinkingOff.messages.find((message) => message.role === "assistant");
+  assert.equal(replayed.reasoning_content, "previous reasoning");
+  assert.equal(replayed.tool_calls[0].function.name, "echo");
+  assert.equal(thinkingOff.messages.some((message) => message.role === "developer"), false);
+});
