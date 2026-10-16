@@ -355,6 +355,10 @@ class BridgeCredentialStore implements CredentialStore {
     const existing = sharedCredentialStates.get(providerConfigId);
     if (existing) {
       this.state = existing;
+      // The slot is reused for the life of the process. A later request has to
+      // be able to install the key currently saved on the provider, including
+      // after clear_provider_credential nulled the previous one.
+      adoptApiKeyCredential(providerConfigId, initialCredential);
     } else {
       this.state = { credential: initialCredential, queue: Promise.resolve() };
       sharedCredentialStates.set(providerConfigId, this.state);
@@ -441,6 +445,36 @@ async function replaceSharedCredential(
   });
   existing.queue = operation.catch(() => undefined);
   await operation;
+}
+
+function adoptApiKeyCredential(
+  providerConfigId: string,
+  credential: Credential | undefined,
+): void {
+  if (!credential || credential.type !== "api_key" || !credential.key) return;
+  const existing = sharedCredentialStates.get(providerConfigId);
+  if (!existing) {
+    sharedCredentialStates.set(providerConfigId, {
+      credential,
+      queue: Promise.resolve(),
+    });
+    return;
+  }
+  // Queue behind an in-flight clear. Saving a provider nulls this slot, and
+  // the next chat has to install its key after that clear, not before it.
+  const operation = existing.queue.then(() => {
+    // A refreshed OAuth token stays until the app clears that slot. API-key
+    // providers (DeepSeek, Xiaomi) have no such token; the key in this request
+    // is the one the provider form saved.
+    if (existing.credential?.type === "oauth") return;
+    existing.credential = credential;
+  });
+  existing.queue = operation.catch(() => undefined);
+}
+
+function publishSavedApiKey(config: ModelConfig): void {
+  if (config.provider_type !== "builtin") return;
+  adoptApiKeyCredential(config.provider_config_id, credentialForConfig(config));
 }
 
 async function clearSharedCredential(providerConfigId: string): Promise<boolean> {
@@ -1322,6 +1356,7 @@ function buildModels(config: ModelConfig): {
 
   if (config.provider_type === "builtin") {
     bridgeDebug("build_models_path", { path: "builtin", pi_provider_id: config.pi_provider_id });
+    publishSavedApiKey(config);
     const provider = builtinProviderById.get(config.pi_provider_id);
     if (!provider) throw new Error(`Unknown built-in Pi provider: ${config.pi_provider_id}`);
     const providerModels = provider.getModels();
@@ -2929,6 +2964,7 @@ function nativeSessionFromPayload(payload: JsonObject): AgentSessionState {
 async function ensureNativeSessionForRequest(payload: JsonObject): Promise<AgentSessionState> {
   const sessionId = asString(payload.session_id).trim();
   if (!sessionId) throw new Error("session_id is required for Pi AgentSession operations.");
+  if (payload.model_config) publishSavedApiKey(normalizeModelConfig(payload.model_config));
   const existing = agentSessions.get(sessionId);
   if (existing) return existing;
   const config = normalizeModelConfig(payload.model_config ?? defaultModelConfig);
@@ -3055,6 +3091,7 @@ async function prepareNativeAgentSession(
   history: AgentMessage[],
 ): Promise<{ state: AgentSessionState; reused: boolean }> {
   const config = normalizeModelConfig(payload.model_config ?? defaultModelConfig);
+  publishSavedApiKey(config);
   const sessionId = asString(payload.session_id).trim();
   if (!sessionId) throw new Error("session_id is required for Pi AgentSession.");
   const platform = platformForPayload(payload);

@@ -3103,3 +3103,83 @@ test("sends MiMo thinking.type, max_completion_tokens, and replayed reasoning_co
   assert.equal(replayed.tool_calls[0].function.name, "echo");
   assert.equal(thinkingOff.messages.some((message) => message.role === "developer"), false);
 });
+
+test("builtin DeepSeek and Xiaomi chats keep the saved API key after credential clear", async (t) => {
+  const authorizations = [];
+  const server = createServer((request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      authorizations.push(request.headers.authorization);
+      Buffer.concat(chunks);
+      writeSuccessfulChatCompletion(response, "CHAT_OK", "chat-model");
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const baseUrl = `http://127.0.0.1:${address.port}/v1`;
+  const home = await mkdtemp(join(tmpdir(), "aether-builtin-key-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const client = new BridgeClient({ HOME: home, USERPROFILE: home });
+  const cases = [
+    ["deepseek", "deepseek-flash", "sk-deepseek"],
+    ["xiaomi", "mimo-v2.6-flash", "sk-xiaomi"],
+  ];
+  for (const [providerId, modelId, apiKey] of cases) {
+    const modelConfig = {
+      provider_type: "builtin",
+      provider_config_id: providerId,
+      pi_provider_id: providerId,
+      pi_api: "builtin",
+      model_id: modelId,
+      base_url: baseUrl,
+      api_key: apiKey,
+      auth_method: "api_key",
+      custom_headers: { "User-Agent": "Aether" },
+      reasoning: providerId === "xiaomi",
+      thinking_level_map: { off: "off", high: "high" },
+      models_dev: {
+        reasoning: providerId === "xiaomi",
+        thinking_levels: ["off", "high"],
+      },
+      max_retries: 0,
+    };
+    const sessionId = `session-builtin-key-${providerId}`;
+    const payload = {
+      ...turnPayload(sessionId, [userMessage("hello")], modelConfig),
+      platform: "android",
+    };
+    const first = await client.request(`builtin-key-${providerId}`, "run_turn", payload, 20_000);
+    assert.equal(first.assistant_text, "CHAT_OK", JSON.stringify(first));
+    await client.request(`clear-${providerId}`, "clear_provider_credential", {
+      provider_config_id: providerId,
+    });
+    const retried = await client.request(
+      `builtin-key-again-${providerId}`,
+      "run_turn",
+      payload,
+      20_000,
+    );
+    assert.equal(retried.assistant_text, "CHAT_OK", JSON.stringify(retried));
+    const freshSession = await client.request(
+      `builtin-key-fresh-${providerId}`,
+      "run_turn",
+      {
+        ...payload,
+        session_id: `${sessionId}-fresh`,
+      },
+      20_000,
+    );
+    assert.equal(freshSession.assistant_text, "CHAT_OK", JSON.stringify(freshSession));
+  }
+  assert.deepEqual(authorizations, [
+    "Bearer sk-deepseek",
+    "Bearer sk-deepseek",
+    "Bearer sk-deepseek",
+    "Bearer sk-xiaomi",
+    "Bearer sk-xiaomi",
+    "Bearer sk-xiaomi",
+  ]);
+});
