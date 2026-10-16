@@ -1836,7 +1836,32 @@ class AetherViewModel(
             emitTransientMessage(uiString(R.string.message_pause_before_deleting_session))
             return
         }
+        if (!removeSessionFromUi(sessionId)) return
+        viewModelScope.launch {
+            deleteSessionFromStorage(sessionId)
+        }
+    }
 
+    fun deleteAllSessions(): Boolean {
+        val snapshot = _uiState.value
+        val sessionIds = snapshot.sessions
+            .map { it.id }
+            .filter { it.isNotBlank() && it != DraftSessionId }
+            .distinct()
+        if (sessionIds.isEmpty()) return false
+        if (sessionIds.any(sessionExecutionManager::isSessionRunning)) {
+            emitTransientMessage(uiString(R.string.message_pause_before_deleting_session))
+            return false
+        }
+        startNewChatNow(enabledDefaultSkillIds(snapshot))
+        sessionIds.forEach { removeSessionFromUi(it) }
+        viewModelScope.launch {
+            sessionIds.forEach { deleteSessionFromStorage(it) }
+        }
+        return true
+    }
+
+    private fun removeSessionFromUi(sessionId: String): Boolean {
         var didUpdate = false
         _uiState.update { current ->
             val session = current.sessions.firstOrNull { it.id == sessionId } ?: return@update current
@@ -1855,31 +1880,31 @@ class AetherViewModel(
                 showStarterPromptHint = false,
             )
         }
-        if (didUpdate) {
-            viewModelScope.launch {
-                chatStateStore.flush()
-                val sharedWorkspaceFilePaths = withContext(Dispatchers.IO) {
-                    runCatching {
-                        runtime.chatRepository.getUnreferencedWorkspaceFilePathsForDeletedSession(sessionId)
-                    }.getOrElse { throwable ->
-                        diagnosticLogger.exception(
-                            category = "storage",
-                            event = "unreferenced_workspace_lookup_failed",
-                            throwable = throwable,
-                            level = "warn",
-                            sessionId = sessionId,
-                            details = mapOf("lookup_scope" to "session"),
-                        )
-                        emptyList()
-                    }
-                }
-                persistDeleteSession(
+        return didUpdate
+    }
+
+    private suspend fun deleteSessionFromStorage(sessionId: String) {
+        chatStateStore.flush()
+        val sharedWorkspaceFilePaths = withContext(Dispatchers.IO) {
+            runCatching {
+                runtime.chatRepository.getUnreferencedWorkspaceFilePathsForDeletedSession(sessionId)
+            }.getOrElse { throwable ->
+                diagnosticLogger.exception(
+                    category = "storage",
+                    event = "unreferenced_workspace_lookup_failed",
+                    throwable = throwable,
+                    level = "warn",
                     sessionId = sessionId,
-                    sharedWorkspaceFilePaths = sharedWorkspaceFilePaths,
+                    details = mapOf("lookup_scope" to "session"),
                 )
-                captureAnalyticsEvent(event = "conversation deleted")
+                emptyList()
             }
         }
+        persistDeleteSession(
+            sessionId = sessionId,
+            sharedWorkspaceFilePaths = sharedWorkspaceFilePaths,
+        )
+        captureAnalyticsEvent(event = "conversation deleted")
     }
 
     fun exportSessionToUri(

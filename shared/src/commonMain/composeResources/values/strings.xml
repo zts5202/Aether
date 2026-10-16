@@ -128,6 +128,10 @@
     <string name="chat_gpts">GPTs</string>
     <string name="chat_recent">Recent</string>
     <string name="chat_no_conversations_yet">No conversations yet.</string>
+    <string name="chat_clear_all_conversations">清空全部对话</string>
+    <string name="chat_clear_all_conversations_message">确定清空全部 %1$d 个对话？此操作无法撤销</string>
+    <string name="chat_clear_all_conversations_confirm">清空</string>
+    <string name="chat_clear_all_conversations_dismiss">取消</string>
     <string name="chat_empty_draft">Empty draft</string>
     <string name="chat_add_attachment_or_tool">Add attachment or tool</string>
     <string name="chat_photos">Photos</string>
