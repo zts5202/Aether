@@ -187,6 +187,7 @@ fun ConversationDrawer(
     onRenameSession: (String, String) -> Unit,
     onExportSession: (ChatSession) -> Unit,
     onDeleteSession: (String) -> Unit,
+    onClearAllSessions: () -> Unit,
     onSettingsSelected: () -> Unit,
 ) {
     AetherConversationDrawer(
@@ -211,6 +212,7 @@ fun ConversationDrawer(
             sessions.firstOrNull { it.id == sessionId }?.let(onExportSession)
         },
         onDeleteSession = onDeleteSession,
+        onClearAllSessions = onClearAllSessions,
         onSettingsSelected = onSettingsSelected,
         headerContent = {
             AetherExtensionSlot(AetherExtensionSlotDrawerHeader)

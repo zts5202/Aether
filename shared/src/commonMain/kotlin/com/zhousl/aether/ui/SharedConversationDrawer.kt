@@ -36,10 +36,13 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,7 +71,12 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.zhousl.aether.data.chatdb.SharedDraftSessionId
 import com.zhousl.aether.shared.resources.Res
+import com.zhousl.aether.shared.resources.chat_clear_all_conversations
+import com.zhousl.aether.shared.resources.chat_clear_all_conversations_confirm
+import com.zhousl.aether.shared.resources.chat_clear_all_conversations_dismiss
+import com.zhousl.aether.shared.resources.chat_clear_all_conversations_message
 import com.zhousl.aether.shared.resources.common_chat
 import com.zhousl.aether.shared.resources.common_delete
 import com.zhousl.aether.shared.resources.common_export
@@ -101,6 +109,7 @@ enum class SharedConversationIndicator {
 }
 
 private val SharedDrawerOverlayFadeHeight = 18.dp
+private val SharedDrawerDestructiveColor = Color(0xFFB42318)
 
 @Composable
 fun AetherConversationDrawer(
@@ -111,6 +120,7 @@ fun AetherConversationDrawer(
     onRenameSession: (String, String) -> Unit,
     onExportSession: (String) -> Unit,
     onDeleteSession: (String) -> Unit,
+    onClearAllSessions: () -> Unit,
     onSettingsSelected: () -> Unit,
     permanent: Boolean = false,
     extraContent: @Composable ((dismissSearch: () -> Unit) -> Unit) = {},
@@ -130,6 +140,10 @@ fun AetherConversationDrawer(
         val query = searchQuery.trim().lowercase()
         if (query.isBlank()) sessions else sessions.filter { it.title.lowercase().contains(query) }
     }
+    val clearableSessionCount = remember(sessions) {
+        sessions.count { session -> session.id.isNotBlank() && session.id != SharedDraftSessionId }
+    }
+    var confirmClearAll by rememberSaveable { mutableStateOf(false) }
     val dismissSearch = {
         searchExpanded = false
         searchQuery = ""
@@ -170,6 +184,9 @@ fun AetherConversationDrawer(
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                     )
                     extraContent(dismissSearch)
+                    if (clearableSessionCount > 0) {
+                        SharedDrawerClearAllRow(onClick = { confirmClearAll = true })
+                    }
                 }
             } else {
                 LazyColumn(
@@ -182,6 +199,11 @@ fun AetherConversationDrawer(
                     ),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
+                    if (clearableSessionCount > 0) {
+                        item(key = "aether-clear-all-conversations") {
+                            SharedDrawerClearAllRow(onClick = { confirmClearAll = true })
+                        }
+                    }
                     items(filteredSessions, key = { it.id }) { session ->
                         SharedDrawerSessionRow(
                             session = session,
@@ -193,6 +215,7 @@ fun AetherConversationDrawer(
                             onRename = { onRenameSession(session.id, it) },
                             onExport = { onExportSession(session.id) },
                             onDelete = { onDeleteSession(session.id) },
+                            onClearAll = { confirmClearAll = true },
                         )
                     }
                     item(key = "aether-extra-drawer-content") {
@@ -311,7 +334,60 @@ fun AetherConversationDrawer(
                     color = Color.White,
                 )
             }
+            if (confirmClearAll && clearableSessionCount > 0) {
+                AlertDialog(
+                    onDismissRequest = { confirmClearAll = false },
+                    containerColor = AetherSurface,
+                    titleContentColor = AetherOnSurface,
+                    textContentColor = AetherOnSurfaceVariant,
+                    text = {
+                        Text(
+                            text = stringResource(
+                                Res.string.chat_clear_all_conversations_message,
+                                clearableSessionCount,
+                            ),
+                        )
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { confirmClearAll = false }) {
+                            Text(stringResource(Res.string.chat_clear_all_conversations_dismiss))
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                confirmClearAll = false
+                                onClearAllSessions()
+                            },
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = SharedDrawerDestructiveColor,
+                            ),
+                        ) {
+                            Text(stringResource(Res.string.chat_clear_all_conversations_confirm))
+                        }
+                    },
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun SharedDrawerClearAllRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(Res.string.chat_clear_all_conversations),
+            style = MaterialTheme.typography.bodyMedium,
+            color = SharedDrawerDestructiveColor,
+        )
     }
 }
 
@@ -356,6 +432,7 @@ private fun SharedDrawerSessionRow(
     onRename: (String) -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
+    onClearAll: () -> Unit,
 ) {
     val newChatTitle = stringResource(Res.string.common_new_chat)
     var menuExpanded by remember { mutableStateOf(false) }
@@ -468,6 +545,10 @@ private fun SharedDrawerSessionRow(
                 menuExpanded = false
                 onDelete()
             },
+            onClearAll = {
+                menuExpanded = false
+                onClearAll()
+            },
         )
     }
 }
@@ -479,6 +560,7 @@ private fun SharedDrawerActionMenu(
     onRename: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
+    onClearAll: () -> Unit,
 ) {
     val visibility = remember { MutableTransitionState(false) }
     visibility.targetState = expanded
@@ -510,6 +592,11 @@ private fun SharedDrawerActionMenu(
                 SharedDrawerActionRow(stringResource(Res.string.common_rename), onRename)
                 SharedDrawerActionRow(stringResource(Res.string.common_export), onExport)
                 SharedDrawerActionRow(stringResource(Res.string.common_delete), onDelete, destructive = true)
+                SharedDrawerActionRow(
+                    stringResource(Res.string.chat_clear_all_conversations),
+                    onClearAll,
+                    destructive = true,
+                )
             }
         }
     }
