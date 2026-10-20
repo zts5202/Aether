@@ -19,6 +19,7 @@ data class LocalRuntimeSetupState(
     val runtimeId: LocalRuntimeId,
     val issue: LocalRuntimeIssue = LocalRuntimeIssue.NotConfigured,
     val detail: String = "",
+    val openNetworkSettings: Boolean = false,
 ) {
     val isReady: Boolean
         get() = issue == LocalRuntimeIssue.Ready

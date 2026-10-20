@@ -1189,6 +1189,11 @@
     <string name="alpine_mirror_china">Using the Tsinghua Alpine mirror with the official CDN as fallback.\n</string>
     <string name="alpine_mirror_official">Using the official Alpine CDN for the current network.\n</string>
     <string name="alpine_mirror_unknown">Network region detection failed; using official and China Alpine sources.\n</string>
+    <string name="alpine_network_checking">Checking internet access. Allow network access if Android asks.\n</string>
+    <string name="alpine_network_access_disabled">Network access is disabled for Aether. In Settings &gt; Apps &gt; Aether, allow Mobile data and Wi-Fi, then retry Alpine initialization.</string>
+    <string name="alpine_network_unreachable">Cannot connect to the Alpine repositories. Connect to the internet and allow network access for Aether if Android asks, then retry. If access was previously denied, enable Mobile data and Wi-Fi in Settings &gt; Apps &gt; Aether.</string>
+    <string name="alpine_setup_incomplete">Alpine rootfs is present, but setup has not finished. Package installation will continue.</string>
+    <string name="alpine_open_network_settings">Open network settings</string>
     <string name="alpine_extract_finished">Finished extracting the Alpine root filesystem (%1$s MB).\n</string>
     <string name="termux_install_before_bash">Install Termux before using bash tools.</string>
     <string name="termux_grant_run_command">Grant Run commands in Termux environment to Aether.</string>

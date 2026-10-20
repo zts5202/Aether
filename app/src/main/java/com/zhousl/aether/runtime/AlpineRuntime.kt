@@ -34,8 +34,6 @@ private const val AlpineAssetRoot = "runtimes/alpine/arm64-v8a"
 private const val AlpineHostLinker = "/system/bin/linker64"
 private const val AlpineNetworkTraceUrl = "https://www.cloudflare.com/cdn-cgi/trace"
 private const val AlpineNetworkDetectionTimeoutMillis = 4_000
-private const val AlpineOfficialRepository = "https://dl-cdn.alpinelinux.org/alpine"
-private const val AlpineChinaRepository = "https://mirrors.tuna.tsinghua.edu.cn/alpine"
 private val AlpineRootfsAssetCandidates = listOf(
     RootfsAsset("$AlpineAssetRoot/rootfs.tar.gz", compressed = true),
     RootfsAsset("$AlpineAssetRoot/rootfs.tar", compressed = false),
@@ -106,6 +104,14 @@ class AlpineRuntime(
     @Volatile
     private var startupNetworkEnvironment: ApkNetworkEnvironment? = null
     @Volatile
+    private var networkAccessChecked = false
+    private val networkAccess = AetherAlpineNetworkAccess(
+        client = AndroidAlpineNetworkProbeClient(appContext),
+        cellularRestricted = { AndroidAlpineNetworkProbeClient.cellularDataRestricted(appContext) },
+        restrictedMessage = { ui(R.string.alpine_network_access_disabled) },
+        unreachableMessage = { ui(R.string.alpine_network_unreachable) },
+    )
+    @Volatile
     private var environmentVariables: List<AlpineEnvironmentVariable> = emptyList()
 
     override val id: LocalRuntimeId = LocalRuntimeId.Alpine
@@ -153,16 +159,6 @@ class AlpineRuntime(
     suspend fun initialize(
         onProgress: (AlpineSetupProgress) -> Unit = {},
     ): LocalRuntimeSetupState = withContext(Dispatchers.IO) {
-        inspectSetup().let { state ->
-            if (
-                state.issue != LocalRuntimeIssue.NotInstalled &&
-                state.issue != LocalRuntimeIssue.Failed &&
-                state.issue != LocalRuntimeIssue.MissingAssets
-            ) {
-                if (state.isReady) refreshApkRepositoriesForCurrentNetwork(onProgress)
-                return@withContext state
-            }
-        }
         if (!isSupportedAbi()) return@withContext unsupportedAbiState()
         if (!hasBundledRuntimeAssets()) {
             return@withContext LocalRuntimeSetupState(
@@ -170,6 +166,19 @@ class AlpineRuntime(
                 issue = LocalRuntimeIssue.MissingAssets,
                 detail = ui(R.string.alpine_assets_missing),
             )
+        }
+        if (rootfsStructureIsComplete()) {
+            val state = inspectSetup()
+            if (state.isReady) refreshApkRepositoriesForCurrentNetwork(onProgress)
+            return@withContext state
+        }
+        val existing = inspectSetup()
+        if (
+            existing.issue != LocalRuntimeIssue.NotInstalled &&
+            existing.issue != LocalRuntimeIssue.Failed &&
+            existing.issue != LocalRuntimeIssue.MissingAssets
+        ) {
+            return@withContext existing
         }
         runCatching {
             installFromAssets(onProgress)
@@ -384,10 +393,9 @@ class AlpineRuntime(
     }
 
     private suspend fun requireReady() {
+        if (rootfsStructureIsComplete()) return
         val setup = inspectSetup()
-        if (!setup.isReady) {
-            error(setup.detail.ifBlank { "Alpine runtime is not ready." })
-        }
+        error(setup.detail.ifBlank { "Alpine runtime is not ready." })
     }
 
     suspend fun installPackageProfile(
@@ -413,16 +421,17 @@ class AlpineRuntime(
                 detail = ui(R.string.alpine_unknown_profile, profileId),
             )
         }
-        val setup = inspectSetup()
-        if (!setup.isReady) return setup
+        if (!rootfsStructureIsComplete()) return inspectSetup()
         refreshApkRepositoriesForCurrentNetwork(onProgress)
         if (verifyPackageProfile(profileId)) {
+            if (profileId == "node") writeAlpineSetupCompleteMarker(runtimeRoot)
             return LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.Ready,
                 detail = ui(R.string.alpine_profile_already_installed, profileId),
             )
         }
+        ensurePackageNetworkAccess(onProgress)?.let { return it }
         val command = packageProfileInstallCommand(profileId)
             ?: return LocalRuntimeSetupState(
                 runtimeId = id,
@@ -450,6 +459,7 @@ class AlpineRuntime(
             rateSampler.stop()
         }
         return if (result.optBoolean("ok") || verifyPackageProfile(profileId)) {
+            if (profileId == "node") writeAlpineSetupCompleteMarker(runtimeRoot)
             LocalRuntimeSetupState(
                 runtimeId = id,
                 issue = LocalRuntimeIssue.Ready,
@@ -505,8 +515,58 @@ class AlpineRuntime(
                 issue = LocalRuntimeIssue.Failed,
                 detail = ui(R.string.alpine_rootfs_missing_release),
             )
-            else -> LocalRuntimeSetupState(LocalRuntimeId.Alpine, LocalRuntimeIssue.Ready)
+            else -> if (hasCompletedAlpineSetup(runtimeRoot) || adoptCompletedSetupMarker(runtimeRoot)) {
+                LocalRuntimeSetupState(LocalRuntimeId.Alpine, LocalRuntimeIssue.Ready)
+            } else {
+                LocalRuntimeSetupState(
+                    runtimeId = id,
+                    issue = LocalRuntimeIssue.NotInstalled,
+                    detail = ui(R.string.alpine_setup_incomplete),
+                )
+            }
         }
+    }
+
+    fun hasExtractedRootfs(): Boolean = rootfsStructureIsComplete()
+
+    /** Records setup completion for a rootfs that already runs, including installs from before the marker existed. */
+    fun markAlpineSetupComplete() {
+        if (rootfsStructureIsComplete()) {
+            writeAlpineSetupCompleteMarker(runtimeRoot)
+        }
+    }
+
+    private fun rootfsStructureIsComplete(): Boolean =
+        isSupportedAbi() &&
+            hasBundledRuntimeAssets() &&
+            rootfsDir.isDirectory &&
+            prootFile.isFile &&
+            loaderFile.isFile &&
+            libTallocFile.isFile &&
+            File(AlpineHostLinker).isFile &&
+            File(rootfsDir, "bin/sh").existsNoFollow() &&
+            File(rootfsDir, "etc/alpine-release").existsNoFollow()
+
+    private fun ensurePackageNetworkAccess(
+        onProgress: (AlpineSetupProgress) -> Unit,
+    ): LocalRuntimeSetupState? {
+        if (networkAccessChecked) return null
+        onProgress(AlpineSetupProgress(output = ui(R.string.alpine_network_checking)))
+        return runCatching { networkAccess.check() }.fold(
+            onSuccess = {
+                networkAccessChecked = true
+                null
+            },
+            onFailure = { error ->
+                if (error is CancellationException || error is InterruptedException) throw error
+                LocalRuntimeSetupState(
+                    runtimeId = id,
+                    issue = LocalRuntimeIssue.Failed,
+                    detail = error.message ?: ui(R.string.alpine_network_unreachable),
+                    openNetworkSettings = error is AlpineNetworkAccessException,
+                )
+            },
+        )
     }
 
     override suspend fun execute(
@@ -524,7 +584,9 @@ class AlpineRuntime(
         if (command.isBlank()) return@withContext invalidArguments("Missing required 'command' argument.")
 
         val setup = inspectSetup()
-        if (!setup.isReady) return@withContext setupError(command, workingDirectory, setup)
+        if (!setup.isReady && !rootfsStructureIsComplete()) {
+            return@withContext setupError(command, workingDirectory, setup)
+        }
 
         ensureWorkspace()
         ensureGuestNetworkConfig()
@@ -624,7 +686,9 @@ class AlpineRuntime(
     ): String = withContext(Dispatchers.IO) {
         val normalizedWorkingDirectory = normalizePath(workingDirectory)
         val setup = inspectSetup()
-        if (!setup.isReady) return@withContext setupError(command, normalizedWorkingDirectory, setup)
+        if (!setup.isReady && !rootfsStructureIsComplete()) {
+            return@withContext setupError(command, normalizedWorkingDirectory, setup)
+        }
         ensureWorkspace()
         ensureGuestNetworkConfig()
         val startedAtMillis = System.currentTimeMillis()
