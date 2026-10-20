@@ -103,6 +103,7 @@ import com.zhousl.aether.data.findModelOption
 import com.zhousl.aether.data.resolveAutomaticModelKey
 import com.zhousl.aether.data.sortedByPreferredModelName
 import com.zhousl.aether.runtime.LocalRuntimeIssue
+import com.zhousl.aether.runtime.alpineApplicationNetworkSettingsIntent
 import com.zhousl.aether.runtime.LocalRuntimeSetupState
 import com.zhousl.aether.data.pi.PiCoreSetupPhase
 import com.zhousl.aether.data.pi.PiCoreSetupState
@@ -889,6 +890,16 @@ private fun AlpineRuntimeStep(
                     style = MaterialTheme.typography.bodySmall,
                     color = TourTextSecondary,
                 )
+            }
+            if (setupState.openNetworkSettings) {
+                val context = LocalContext.current
+                TextButton(
+                    onClick = {
+                        context.startActivity(alpineApplicationNetworkSettingsIntent(context.packageName))
+                    },
+                ) {
+                    Text(stringResource(R.string.alpine_open_network_settings))
+                }
             }
             if (
                 piCoreSetupState.isChecking ||

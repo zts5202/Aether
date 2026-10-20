@@ -78,6 +78,7 @@ import com.zhousl.aether.data.withExplicitDefaultChatModel
 import com.zhousl.aether.data.LlmMessage
 import com.zhousl.aether.data.LlmTextPart
 import com.zhousl.aether.data.ProviderAuthMethod
+import com.zhousl.aether.data.pi.PiBridgeException
 import com.zhousl.aether.data.pi.PiCompletionClient
 import com.zhousl.aether.data.pi.PiKernelBridge
 import com.zhousl.aether.data.pi.PiModelConfig
@@ -806,7 +807,10 @@ class AetherViewModel(
             )
         }
         _uiState.update { current -> current.copy(alpineSetupState = setupState) }
-        if (setupState.isReady) {
+        val continuePackageSetup = setupState.isReady || withContext(Dispatchers.IO) {
+            runtime.alpineRuntime.hasExtractedRootfs()
+        }
+        if (continuePackageSetup) {
             _uiState.update { current ->
                 current.copy(
                     piCoreSetupState = current.piCoreSetupState.copy(
@@ -817,6 +821,16 @@ class AetherViewModel(
                 )
             }
             refreshPiCoreSetup()
+            val completed = withContext(Dispatchers.IO) { runtime.alpineRuntime.inspectSetup() }
+            if (completed.isReady) {
+                settingsRepository.updateSettings(
+                    _uiState.value.settings.withRuntimeEnabled(
+                        runtimeId = LocalRuntimeId.Alpine,
+                        makeDefault = makeDefault,
+                    )
+                )
+                _uiState.update { current -> current.copy(alpineSetupState = completed) }
+            }
         } else {
             _uiState.update { current ->
                 current.copy(
@@ -873,15 +887,26 @@ class AetherViewModel(
             },
             onFailure = { throwable ->
                 if (throwable is CancellationException) throw throwable
+                val detail = throwable.userFacingMessage()
+                val networkSettings = (throwable as? PiBridgeException)?.code == "alpine_network_access"
                 _uiState.update { current ->
                     current.copy(
+                        alpineSetupState = if (networkSettings) {
+                            current.alpineSetupState.copy(
+                                issue = LocalRuntimeIssue.Failed,
+                                detail = detail,
+                                openNetworkSettings = true,
+                            )
+                        } else {
+                            current.alpineSetupState
+                        },
                         piCoreSetupState = PiCoreSetupState(
                             phase = PiCoreSetupPhase.Failed,
                             failedAtPhase = current.piCoreSetupState.phase,
-                            detail = throwable.userFacingMessage(),
+                            detail = detail,
                             output = appendSetupOutput(
                                 current.piCoreSetupState.output,
-                                ui(R.string.setup_failed, throwable.userFacingMessage()),
+                                ui(R.string.setup_failed, detail),
                             ),
                         )
                     )
@@ -1025,7 +1050,19 @@ class AetherViewModel(
             val runtimeState = withContext(Dispatchers.IO) {
                 runtime.alpineRuntime.inspectSetup()
             }
-            _uiState.update { current -> current.copy(alpineSetupState = runtimeState) }
+            _uiState.update { current ->
+                current.copy(
+                    alpineSetupState = if (installState.openNetworkSettings) {
+                        runtimeState.copy(
+                            issue = LocalRuntimeIssue.Failed,
+                            detail = installState.detail,
+                            openNetworkSettings = true,
+                        )
+                    } else {
+                        runtimeState
+                    },
+                )
+            }
             emitTransientMessage(UiText.Raw(installState.detail.ifBlank { ui(R.string.alpine_profile_updated) }))
         }
     }

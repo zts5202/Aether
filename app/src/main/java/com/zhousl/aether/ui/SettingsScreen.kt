@@ -186,6 +186,7 @@ import org.json.JSONObject
 import com.zhousl.aether.runtime.LocalRuntimeSetupState
 import com.zhousl.aether.runtime.AlpineSetupActivity
 import com.zhousl.aether.runtime.AlpineSetupProgress
+import com.zhousl.aether.runtime.alpineApplicationNetworkSettingsIntent
 import com.zhousl.aether.runtime.AlpineTerminalLaunchSpec
 import com.zhousl.aether.runtime.AndroidAlpineFileManagerRuntime
 import com.zhousl.aether.termux.TermuxSetupState
@@ -5404,6 +5405,17 @@ private fun AlpineSettingsPage(
                         text = setupState.detail,
                         style = MaterialTheme.typography.bodySmall,
                         color = AetherOnSurfaceVariant,
+                    )
+                }
+                if (setupState.openNetworkSettings) {
+                    val context = LocalContext.current
+                    Spacer(Modifier.height(10.dp))
+                    SettingsSubtleActionButton(
+                        label = stringResource(R.string.alpine_open_network_settings),
+                        onClick = {
+                            context.startActivity(alpineApplicationNetworkSettingsIntent(context.packageName))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 Spacer(Modifier.height(14.dp))

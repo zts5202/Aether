@@ -806,9 +806,10 @@ class PiKernelBridge(
             details = mapOf(
                 "is_ready" to setup.isReady,
                 "detail" to setup.detail,
+                "rootfs_present" to alpineRuntime.hasExtractedRootfs(),
             ),
         )
-        if (!setup.isReady) {
+        if (!setup.isReady && !alpineRuntime.hasExtractedRootfs()) {
             throw PiBridgeException(
                 setup.detail.ifBlank {
                     "Initialize Alpine before starting the agent runtime."
@@ -850,7 +851,11 @@ class PiKernelBridge(
             if (!installState.isReady) {
                 throw PiBridgeException(
                     installState.detail.ifBlank { "Failed to install Node.js inside Alpine." },
-                    code = "node_install_failed",
+                    code = if (installState.openNetworkSettings) {
+                        "alpine_network_access"
+                    } else {
+                        "node_install_failed"
+                    },
                 )
             }
             val installedVersion = readNodeVersion()
@@ -861,6 +866,7 @@ class PiKernelBridge(
                 )
             }
         }
+        alpineRuntime.markAlpineSetupComplete()
 
         if (!alpineRuntime.isPackageProfileInstalled("git_search")) {
             diagnosticLogger.event(
@@ -881,7 +887,11 @@ class PiKernelBridge(
             if (!installState.isReady) {
                 throw PiBridgeException(
                     installState.detail.ifBlank { "Failed to install Pi search tools inside Alpine." },
-                    code = "pi_search_tools_install_failed",
+                    code = if (installState.openNetworkSettings) {
+                        "alpine_network_access"
+                    } else {
+                        "pi_search_tools_install_failed"
+                    },
                 )
             }
         }

@@ -1187,6 +1187,11 @@
     <string name="alpine_mirror_china">正在使用清华大学 Alpine 镜像，并以官方 CDN 作为备用。\n</string>
     <string name="alpine_mirror_official">正在使用适合当前网络的官方 Alpine CDN。\n</string>
     <string name="alpine_mirror_unknown">未能识别网络区域，将同时使用官方源与国内 Alpine 源。\n</string>
+    <string name="alpine_network_checking">正在检查网络。如果系统询问，请允许网络访问。\n</string>
+    <string name="alpine_network_access_disabled">Aether 的网络访问已关闭。请在系统设置 &gt; 应用 &gt; Aether 中允许移动数据和 WLAN，然后重试 Alpine 初始化。</string>
+    <string name="alpine_network_unreachable">无法连接 Alpine 软件源。请连接互联网，并在系统询问时允许 Aether 使用网络，然后重试。如果之前拒绝了网络访问，请在系统设置 &gt; 应用 &gt; Aether 中开启移动数据和 WLAN。</string>
+    <string name="alpine_setup_incomplete">Alpine 根文件系统已存在，但安装尚未完成。将继续安装软件包。</string>
+    <string name="alpine_open_network_settings">打开网络设置</string>
     <string name="alpine_extract_finished">已完成 Alpine 环境根文件系统解压（%1$s MB）。\n</string>
     <string name="termux_install_before_bash">使用 bash 工具前，请先安装 Termux 终端。</string>
     <string name="termux_grant_run_command">请向 Aether 授予“在 Termux 终端环境中运行命令”权限。</string>
