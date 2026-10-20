@@ -135,7 +135,12 @@ fun AppSettings.toPiModelConfig(
         baseUrl.trim().ifBlank { definition.defaultBaseUrl },
         definition.id,
     )
-    val reasoningEnabled = xiaomiEndpoint || (
+    val thinkingToggle = com.zhousl.aether.data.hasThinkingToggle(
+        definition.id,
+        modelId,
+        baseUrl.trim().ifBlank { definition.defaultBaseUrl },
+    )
+    val reasoningEnabled = xiaomiEndpoint || thinkingToggle || (
         isReasoningModel ?: (
             effort != "off" || thinkingLevelMap["off"] == "none"
         )

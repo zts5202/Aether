@@ -989,7 +989,12 @@ private fun ConversationModelSelector(
     val menuWidth = 242.dp
     val selectedOption = options.firstOrNull { it.key == menuSelectedModelKey } ?: options.firstOrNull()
     val supportedThinkingLevels = selectedOption?.let { option ->
-        thinkingLevelsByProviderModel[thinkingCatalogKey(option.piProviderId, option.modelId)]
+        com.zhousl.aether.data.effectiveThinkingLevels(
+            thinkingLevelsByProviderModel[thinkingCatalogKey(option.piProviderId, option.modelId)],
+            option.piProviderId,
+            option.modelId,
+            option.baseUrl,
+        )
     }.orEmpty()
     val effectiveReasoningEffort = selectedOption?.let { option ->
         thinkingLevelClampsByProviderModel[thinkingCatalogKey(option.piProviderId, option.modelId)]

@@ -18,6 +18,25 @@ fun isXiaomiMiMoEndpoint(baseUrl: String, providerId: String = ""): Boolean {
     return id == "xiaomi" || id.startsWith("xiaomi-token-plan")
 }
 
+/** Thinking levels offered for models with an on/off thinking switch (MiMo, DeepSeek flash). */
+val ThinkingToggleLevels: List<String> = listOf("off", "low", "medium", "high")
+
+/** True for models whose API exposes a thinking switch even if the catalog omits `reasoning`. */
+fun hasThinkingToggle(piProviderId: String, modelId: String, baseUrl: String): Boolean {
+    if (isXiaomiMiMoEndpoint(baseUrl, piProviderId)) return true
+    val model = modelId.trim().lowercase()
+    return "deepseek" in piProviderId.trim().lowercase() && "flash" in model
+}
+
+/** Catalog levels when known; otherwise off/low/medium/high for thinking-switch models. */
+fun effectiveThinkingLevels(
+    catalogLevels: List<String>?,
+    piProviderId: String,
+    modelId: String,
+    baseUrl: String,
+): List<String> = catalogLevels?.takeIf { it.isNotEmpty() }
+    ?: if (hasThinkingToggle(piProviderId, modelId, baseUrl)) ThinkingToggleLevels else emptyList()
+
 fun xiaomiApiKeyEndpointMismatchMessage(baseUrl: String, apiKey: String): String? {
     val host = endpointHost(baseUrl)
     val key = apiKey.trim()

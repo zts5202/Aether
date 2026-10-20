@@ -165,8 +165,8 @@
     <string name="chat_attachment_count_other">%1$d 个附件</string>
     <string name="chat_select_model">选择模型</string>
     <string name="chat_model">模型</string>
-    <string name="chat_reasoning_effort">推理强度</string>
-    <string name="chat_reasoning_effort_choose">选择推理强度</string>
+    <string name="chat_reasoning_effort">思考</string>
+    <string name="chat_reasoning_effort_choose">选择思考强度</string>
     <string name="chat_reasoning_effort_off">关闭</string>
     <string name="chat_reasoning_effort_minimal">极低</string>
     <string name="chat_reasoning_effort_low">低</string>
