@@ -60,3 +60,9 @@ internal fun agentModeScreenshotSize(width: Int, height: Int, maxEdge: Int): Pai
 
 private fun formatCoordinate(value: Double): String =
     if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+
+internal const val AgentModeRotationSettleMillis = 2_000L
+
+/** True when the current display has the same orientation as the observation the coordinates came from. */
+internal fun agentModeOrientationMatches(observedLandscape: Boolean?, width: Int, height: Int): Boolean =
+    observedLandscape == null || width <= 0 || height <= 0 || observedLandscape == (width > height)

@@ -196,6 +196,8 @@ class AgentModeController(
     }
 
     private var displayOrientationOverride: AgentModeDisplayOrientation? = null
+    /** Orientation (landscape?) of the last screen observation the model saw; coordinates refer to it. */
+    private var lastObservedLandscape: Boolean? = null
     private var createdDisplayOrientation: AgentModeDisplayOrientation? = null
     private var shizukuDisplayId: Int? = null
     private var displayOwnerMethod: AgentModeAuthorizationMethod? = null
@@ -261,6 +263,10 @@ class AgentModeController(
                     "action" to action.ifBlank { "unknown" },
                     "authorization_method" to settings.phoneUseAuthorizationMethod.storageValue,
                     "display_active" to _displayState.value.isActive,
+                    "node_id" to arguments.optString("node_id").takeIf { it.isNotBlank() },
+                    "x" to arguments.opt("x"), "y" to arguments.opt("y"),
+                    "display_width" to _displayState.value.width,
+                    "display_height" to _displayState.value.height,
                 ),
             )
 
@@ -323,6 +329,7 @@ class AgentModeController(
                                     }
                                 } else {
                                     require(action in setOf("tap", "click", "long_click")) { "scroll requires node_id." }
+                                    awaitObservedOrientation(settings)
                                     when (val point = resolvePoint(arguments, "x", "y")) {
                                         is ResolvedPoint.Invalid -> error(point.message)
                                         is ResolvedPoint.Valid -> {
@@ -349,6 +356,7 @@ class AgentModeController(
                     }
                     "swipe" -> {
                         val displayId = ensureDisplay(settings)
+                        awaitObservedOrientation(settings)
                         val start = resolvePoint(arguments, "x1", "y1")
                         val end = resolvePoint(arguments, "x2", "y2")
                         require(start is ResolvedPoint.Valid) { (start as ResolvedPoint.Invalid).message }
@@ -889,12 +897,40 @@ class AgentModeController(
         }
     }
 
+    /**
+     * Coordinates are normalized against the screenshot/tree the model last saw. If the display has
+     * rotated since (some apps briefly force landscape), mapping them onto the new orientation taps
+     * the wrong element. Wait for the rotation to settle back; otherwise ask for a fresh observation.
+     */
+    private suspend fun awaitObservedOrientation(settings: AppSettings) {
+        val observed = lastObservedLandscape ?: return
+        val deadline = System.currentTimeMillis() + AgentModeRotationSettleMillis
+        while (true) {
+            ensureDisplay(settings)
+            val state = _displayState.value
+            if (agentModeOrientationMatches(observed, state.width, state.height)) return
+            if (System.currentTimeMillis() >= deadline) break
+            delay(200)
+        }
+        diagnosticLogger.event(
+            category = "agent_mode",
+            event = "coordinate_orientation_mismatch",
+            level = "warn",
+            details = mapOf("observed_landscape" to observed, "width" to _displayState.value.width, "height" to _displayState.value.height),
+        )
+        error(
+            "The screen rotated since the last observation, so these coordinates no longer match. " +
+                "Observe (screenshot/tree) again and use coordinates from the new image.",
+        )
+    }
+
     private suspend fun observeAfterDelay(settings: AppSettings, delayMillis: Long): String {
         val expectedDisplayId = _displayState.value.displayId
         if (delayMillis > 0) delay(delayMillis)
         val state = _displayState.value
         check(state.isActive && state.displayId == expectedDisplayId) { "Phone Use session stopped before observation." }
         val displayId = state.displayId ?: error("Phone Use session has no display.")
+        lastObservedLandscape = state.width > state.height
         return PhoneUseAccessibilityService.requireConnected()
             .observeAsync(displayId, state.width, state.height).toString()
     }
@@ -914,6 +950,9 @@ class AgentModeController(
             error("Phone Use screenshot capture produced an empty file.")
         }
         val bytes = previewFile.readBytes()
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth > 0 && bounds.outHeight > 0) lastObservedLandscape = bounds.outWidth > bounds.outHeight
         val latestPreviewFile = File(cacheDirectory, "latest.$AgentModeCaptureExtension")
         previewFile.copyTo(latestPreviewFile, overwrite = true)
         val previewPath = previewFile.absolutePath

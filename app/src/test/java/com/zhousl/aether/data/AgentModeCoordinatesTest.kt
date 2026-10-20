@@ -84,4 +84,12 @@ class AgentModeCoordinatesTest {
     fun unknownFocusWhenDumpHasNoDispatcherSection() {
         assertFalse(parseInputDispatcherFocus("dumpsys failed", 2).has("focused_window"))
     }
+
+    @Test
+    fun coordinatesOnlyApplyWhenOrientationMatchesTheObservation() {
+        assertTrue(agentModeOrientationMatches(false, 1200, 2608))
+        assertFalse(agentModeOrientationMatches(false, 2608, 1200))
+        assertTrue(agentModeOrientationMatches(true, 2608, 1200))
+        assertTrue(agentModeOrientationMatches(null, 2608, 1200))
+    }
 }
