@@ -185,6 +185,25 @@ fun AppSettings.toPiModelConfig(
 internal fun AppSettings.toPiThinkingLevel(): String =
     normalizeReasoningEffort(reasoningEffort)
 
+/**
+ * Normal (non-Agent) chat turns default to thinking off for models that expose an
+ * on/off thinking toggle (Xiaomi MiMo `thinking.type`, DeepSeek flash). Simple
+ * chat does not benefit from the extra ~1.5s of reasoning; Agent / phone
+ * operation mode keeps the user's selected reasoning effort unchanged.
+ */
+internal fun AppSettings.toPiThinkingLevel(agentModeEnabled: Boolean): String {
+    val selected = toPiThinkingLevel()
+    if (agentModeEnabled) return selected
+    return if (hasThinkingToggle()) "off" else selected
+}
+
+internal fun AppSettings.hasThinkingToggle(): Boolean {
+    val definition = PiProviderCatalog.resolve(piProviderId)
+    if (isXiaomiMiMoEndpoint(baseUrl.trim().ifBlank { definition.defaultBaseUrl }, definition.id)) return true
+    val model = modelId.trim().lowercase()
+    return definition.id == "deepseek" && "flash" in model
+}
+
 fun fauxPiModelConfig(
     modelId: String = "faux-1",
     response: String = "ok",

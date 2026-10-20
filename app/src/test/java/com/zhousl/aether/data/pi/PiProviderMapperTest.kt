@@ -17,6 +17,25 @@ import org.junit.Test
 
 class PiProviderMapperTest {
     @Test
+    fun normalChatDisablesThinkingForToggleModelsButAgentModeKeepsIt() {
+        val mimo = AppSettings(
+            piProviderId = "xiaomi",
+            baseUrl = "https://api.xiaomimimo.com/v1",
+            modelId = "mimo-v2.6-flash",
+            reasoningEffort = "high",
+        )
+        assertEquals("off", mimo.toPiThinkingLevel(agentModeEnabled = false))
+        assertEquals("high", mimo.toPiThinkingLevel(agentModeEnabled = true))
+
+        val deepseek = AppSettings(piProviderId = "deepseek", modelId = "deepseek-flash", reasoningEffort = "medium")
+        assertEquals("off", deepseek.toPiThinkingLevel(agentModeEnabled = false))
+        assertEquals("medium", deepseek.toPiThinkingLevel(agentModeEnabled = true))
+
+        val other = AppSettings(piProviderId = "openai", modelId = "gpt-5", reasoningEffort = "high")
+        assertEquals("high", other.toPiThinkingLevel(agentModeEnabled = false))
+    }
+
+    @Test
     fun deepSeekDefaultModelIsOfficialFlashId() {
         assertEquals("deepseek-flash", PiProviderCatalog.find("deepseek")!!.defaultModelId)
         assertEquals(

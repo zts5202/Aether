@@ -144,7 +144,7 @@ class PiAgentRunner(
                     put("runtime", runtimeId.storageValue)
                     put("platform", "android")
                     put("chrome_enabled", chromeEnabled)
-                    put("reasoning", settings.toPiThinkingLevel())
+                    put("reasoning", settings.toPiThinkingLevel(agentModeEnabled))
                     put(
                         "disabled_extension_paths",
                         JSONArray(extensionLoadOptions?.disabledExtensionPaths?.toList().orEmpty()),
@@ -161,7 +161,7 @@ class PiAgentRunner(
                         ),
                     )
                 }
-                val requestedThinkingLevel = settings.toPiThinkingLevel()
+                val requestedThinkingLevel = settings.toPiThinkingLevel(agentModeEnabled)
                 diagnosticLogger.event(
                     category = "pi_agent",
                     event = "reasoning_effort_resolved",
