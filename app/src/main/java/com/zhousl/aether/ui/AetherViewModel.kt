@@ -2610,6 +2610,14 @@ class AetherViewModel(
         }
     }
 
+    fun setNormalChatReasoningEffort(effort: String) {
+        viewModelScope.launch {
+            settingsRepository.updateSettings(
+                _uiState.value.settings.copy(normalChatReasoningEffort = normalizeReasoningEffort(effort)),
+            )
+        }
+    }
+
     fun setCurrentChatModelSelection(modelKey: String) {
         var didUpdate = false
         var sessionIdForPersistence: String? = null
@@ -6041,6 +6049,7 @@ class AetherViewModel(
         put("userAgent", normalizeLlmUserAgent(userAgent))
         put("customHeaders", customHeaders.toJsonArray())
         put("reasoningEffort", reasoningEffort)
+        put("normalChatReasoningEffort", normalChatReasoningEffort)
         put("systemPrompt", systemPrompt)
         put("llmInactivityReconnectTimeoutSeconds", llmInactivityReconnectTimeoutSeconds)
         put("keepTasksRunningInBackground", keepTasksRunningInBackground)
@@ -6142,6 +6151,9 @@ class AetherViewModel(
             customHeaders = parseCustomHeaders(json.optJSONArray("customHeaders")),
             reasoningEffort = normalizeReasoningEffort(
                 json.optString("reasoningEffort", defaults.reasoningEffort),
+            ),
+            normalChatReasoningEffort = normalizeReasoningEffort(
+                json.optString("normalChatReasoningEffort", defaults.normalChatReasoningEffort),
             ),
             systemPrompt = json.optString("systemPrompt", defaults.systemPrompt),
             llmInactivityReconnectTimeoutSeconds = normalizeLlmInactivityReconnectTimeoutSeconds(

@@ -313,6 +313,7 @@ private fun AppSettings.toAndroidAppSettingsJson(): JsonObject = buildJsonObject
         }
     })
     put("reasoningEffort", normalizeReasoningEffort(reasoningEffort))
+    put("normalChatReasoningEffort", normalizeReasoningEffort(normalChatReasoningEffort))
     put("systemPrompt", systemPrompt)
     put("llmInactivityReconnectTimeoutSeconds", llmInactivityReconnectTimeoutSeconds)
     put("keepTasksRunningInBackground", keepTasksRunningInBackground)
@@ -393,6 +394,9 @@ private fun parseAndroidAppSettings(value: JsonObject): AppSettings {
         customHeaders = parseCustomHeaders(value["customHeaders"] as? JsonArray),
         reasoningEffort = normalizeReasoningEffort(
             value.stringValueOrDefault("reasoningEffort", defaults.reasoningEffort),
+        ),
+        normalChatReasoningEffort = normalizeReasoningEffort(
+            value.stringValueOrDefault("normalChatReasoningEffort", defaults.normalChatReasoningEffort),
         ),
         systemPrompt = value.stringValueOrDefault("systemPrompt", defaults.systemPrompt),
         llmInactivityReconnectTimeoutSeconds = normalizeLlmInactivityReconnectTimeoutSeconds(

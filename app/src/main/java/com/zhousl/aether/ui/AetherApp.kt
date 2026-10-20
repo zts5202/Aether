@@ -925,7 +925,11 @@ private fun AetherAppContent(
                     modelOptions = conversationModelOptions,
                     modelCatalogInfo = uiState.modelCatalogInfo,
                     selectedModelKey = selectedConversationModelKey,
-                    reasoningEffort = uiState.settings.reasoningEffort,
+                    reasoningEffort = if (agentModeSelected) {
+                        uiState.settings.reasoningEffort
+                    } else {
+                        uiState.settings.normalChatReasoningEffort
+                    },
                     thinkingLevelsByProviderModel = uiState.thinkingLevelsByProviderModel,
                     thinkingLevelClampsByProviderModel = uiState.thinkingLevelClampsByProviderModel,
                     availableSkills = uiState.installedSkills.filter { it.isEnabled },
@@ -954,7 +958,13 @@ private fun AetherAppContent(
                     onInputChanged = viewModel::updateDraftInput,
                     onModelSelected = viewModel::setCurrentChatModelSelectionAndResolveThinkingLevels,
                     onModelSelectorOpened = viewModel::refreshCurrentChatThinkingLevels,
-                    onReasoningEffortSelected = viewModel::setReasoningEffort,
+                    onReasoningEffortSelected = { effort ->
+                        if (agentModeSelected) {
+                            viewModel.setReasoningEffort(effort)
+                        } else {
+                            viewModel.setNormalChatReasoningEffort(effort)
+                        }
+                    },
                     onRemoveDraftAttachment = viewModel::removeDraftAttachment,
                     onSetSkillSelected = viewModel::setComposerSkillSelected,
                     onSetMcpServerSelected = { _, _ -> },
@@ -1091,6 +1101,8 @@ private fun AetherAppContent(
                     appUpdate = uiState.appUpdate,
                     onSave = viewModel::saveSettings,
                     onSaveDefaultModelKeys = viewModel::saveDefaultModelKeys,
+                    normalChatReasoningEffort = uiState.settings.normalChatReasoningEffort,
+                    onNormalChatReasoningEffortChange = viewModel::setNormalChatReasoningEffort,
                     onSaveAgentModeAuthorization = viewModel::saveAgentModeAuthorization,
                     onUpdateLanguage = { language ->
                         viewModel.updateAppLanguage(language)

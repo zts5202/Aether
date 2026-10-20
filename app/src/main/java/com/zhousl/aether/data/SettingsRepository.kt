@@ -147,6 +147,7 @@ class SettingsRepository(
             compatibilityMode = preferences[COMPATIBILITY_MODE] ?: false,
             developerRoleUnsupported = preferences[DEVELOPER_ROLE_UNSUPPORTED] ?: false,
             reasoningEffort = normalizeReasoningEffort(preferences[REASONING_EFFORT]),
+            normalChatReasoningEffort = normalizeReasoningEffort(preferences[NORMAL_CHAT_REASONING_EFFORT]),
             systemPrompt = preferences[SYSTEM_PROMPT] ?: defaults.systemPrompt,
             llmInactivityReconnectTimeoutSeconds = normalizeLlmInactivityReconnectTimeoutSeconds(
                 preferences[LLM_INACTIVITY_RECONNECT_TIMEOUT_SECONDS]
@@ -475,6 +476,7 @@ class SettingsRepository(
             it[COMPATIBILITY_MODE] = settings.compatibilityMode
             it[DEVELOPER_ROLE_UNSUPPORTED] = settings.developerRoleUnsupported
             it[REASONING_EFFORT] = normalizeReasoningEffort(settings.reasoningEffort)
+            it[NORMAL_CHAT_REASONING_EFFORT] = normalizeReasoningEffort(settings.normalChatReasoningEffort)
             it[SYSTEM_PROMPT] = settings.systemPrompt
             it[LLM_INACTIVITY_RECONNECT_TIMEOUT_SECONDS] =
                 normalizeLlmInactivityReconnectTimeoutSeconds(
@@ -616,6 +618,7 @@ class SettingsRepository(
             it[COMPATIBILITY_MODE] = settings.compatibilityMode
             it[DEVELOPER_ROLE_UNSUPPORTED] = settings.developerRoleUnsupported
             it[REASONING_EFFORT] = normalizeReasoningEffort(settings.reasoningEffort)
+            it[NORMAL_CHAT_REASONING_EFFORT] = normalizeReasoningEffort(settings.normalChatReasoningEffort)
             it[TERMUX_SETUP_COMPLETED] = settings.termuxSetupCompleted
             it[TERMUX_SETUP_NOTICE_DISMISSED] = settings.termuxSetupNoticeDismissed
             it[ENABLED_RUNTIME_IDS] = serializeRuntimeIds(settings.enabledRuntimeIds)
@@ -686,6 +689,7 @@ class SettingsRepository(
         val COMPATIBILITY_MODE = booleanPreferencesKey("compatibility_mode")
         val DEVELOPER_ROLE_UNSUPPORTED = booleanPreferencesKey("developer_role_unsupported")
         val REASONING_EFFORT = stringPreferencesKey("reasoning_effort")
+        val NORMAL_CHAT_REASONING_EFFORT = stringPreferencesKey("normal_chat_reasoning_effort")
         val SYSTEM_PROMPT = stringPreferencesKey("system_prompt")
         val LLM_INACTIVITY_RECONNECT_TIMEOUT_SECONDS =
             intPreferencesKey("llm_inactivity_reconnect_timeout_seconds")

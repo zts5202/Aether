@@ -77,6 +77,8 @@ class AetherSettingsStore(
             systemPrompt = preferences[SystemPrompt] ?: serializedSettings.systemPrompt,
             reasoningEffort = preferences[ReasoningEffort]
                 ?.let(::normalizeReasoningEffort) ?: serializedSettings.reasoningEffort,
+            normalChatReasoningEffort = preferences[NormalChatReasoningEffort]
+                ?.let(::normalizeReasoningEffort) ?: serializedSettings.normalChatReasoningEffort,
             defaultSelectedSkillIds = preferences[DefaultSelectedSkillIds]
                 ?.let(::parsePersistedStringListOrNull) ?: serializedSettings.defaultSelectedSkillIds,
         )
@@ -159,6 +161,7 @@ class AetherSettingsStore(
             preferences[ThemeMode] = settings.themeMode.storageValue
             preferences[SystemPrompt] = settings.systemPrompt
             preferences[ReasoningEffort] = normalizeReasoningEffort(settings.reasoningEffort)
+            preferences[NormalChatReasoningEffort] = normalizeReasoningEffort(settings.normalChatReasoningEffort)
             preferences[DefaultSelectedSkillIds] = serializePersistedStringList(
                 settings.defaultSelectedSkillIds,
             )
@@ -268,6 +271,7 @@ class AetherSettingsStore(
             preferences[ThemeMode] = persisted.appSettings.themeMode.storageValue
             preferences[SystemPrompt] = persisted.appSettings.systemPrompt
             preferences[ReasoningEffort] = normalizeReasoningEffort(persisted.appSettings.reasoningEffort)
+            preferences[NormalChatReasoningEffort] = normalizeReasoningEffort(persisted.appSettings.normalChatReasoningEffort)
             preferences[DefaultSelectedSkillIds] = serializePersistedStringList(
                 persisted.appSettings.defaultSelectedSkillIds,
             )
@@ -283,6 +287,7 @@ class AetherSettingsStore(
         val ThemeMode = stringPreferencesKey("theme_mode")
         val SystemPrompt = stringPreferencesKey("system_prompt")
         val ReasoningEffort = stringPreferencesKey("reasoning_effort")
+        val NormalChatReasoningEffort = stringPreferencesKey("normal_chat_reasoning_effort")
         val DefaultSelectedSkillIds = stringPreferencesKey("default_selected_skill_ids")
         val BuiltInSkillDefaultsInitialized = booleanPreferencesKey(
             "built_in_skill_defaults_initialized_v1",

@@ -527,7 +527,7 @@ class SessionExecutionManager(
             while (nextRequest != null && !handle.pauseRequested) {
                 lastCompletion = executeTurn(
                     handle = handle,
-                    request = nextRequest,
+                    rawRequest = nextRequest,
                 )
                 if (handle.pauseRequested) break
                 promoteRemainingSteersToQueue(handle)
@@ -577,8 +577,11 @@ class SessionExecutionManager(
 
     private suspend fun executeTurn(
         handle: SessionExecutionHandle,
-        request: SessionTurnRequest,
+        rawRequest: SessionTurnRequest,
     ): CompletionSummary {
+        val request = rawRequest.copy(
+            settings = rawRequest.settings.withChatModeReasoning(rawRequest.agentModeEnabled),
+        )
         val turnStartedAtMillis = System.currentTimeMillis()
         val turnId = "turn-$turnStartedAtMillis"
         val responseIdentity = activateAssistantResponse(handle)

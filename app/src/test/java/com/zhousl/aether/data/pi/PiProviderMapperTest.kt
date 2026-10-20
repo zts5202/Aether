@@ -9,6 +9,7 @@ import com.zhousl.aether.data.LlmMessage
 import com.zhousl.aether.data.LlmTextPart
 import com.zhousl.aether.data.LlmTokenUsage
 import com.zhousl.aether.data.ProviderAuthMethod
+import com.zhousl.aether.data.withChatModeReasoning
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,22 +18,26 @@ import org.junit.Test
 
 class PiProviderMapperTest {
     @Test
-    fun normalChatDisablesThinkingForToggleModelsButAgentModeKeepsIt() {
-        val mimo = AppSettings(
-            piProviderId = "xiaomi",
-            baseUrl = "https://api.xiaomimimo.com/v1",
-            modelId = "mimo-v2.6-flash",
-            reasoningEffort = "high",
-        )
-        assertEquals("off", mimo.toPiThinkingLevel(agentModeEnabled = false))
-        assertEquals("high", mimo.toPiThinkingLevel(agentModeEnabled = true))
+    fun normalChatUsesItsOwnThinkingSettingAndAgentModeKeepsReasoningEffort() {
+        val defaults = AppSettings(piProviderId = "xiaomi", modelId = "mimo-v2.6-flash", reasoningEffort = "high")
+        assertEquals("off", defaults.normalChatReasoningEffort)
+        assertEquals("off", defaults.toPiThinkingLevel(agentModeEnabled = false))
+        assertEquals("high", defaults.toPiThinkingLevel(agentModeEnabled = true))
 
-        val deepseek = AppSettings(piProviderId = "deepseek", modelId = "deepseek-flash", reasoningEffort = "medium")
-        assertEquals("off", deepseek.toPiThinkingLevel(agentModeEnabled = false))
-        assertEquals("medium", deepseek.toPiThinkingLevel(agentModeEnabled = true))
+        val enabled = defaults.copy(normalChatReasoningEffort = "low")
+        assertEquals("low", enabled.toPiThinkingLevel(agentModeEnabled = false))
+        assertEquals("high", enabled.toPiThinkingLevel(agentModeEnabled = true))
 
-        val other = AppSettings(piProviderId = "openai", modelId = "gpt-5", reasoningEffort = "high")
-        assertEquals("high", other.toPiThinkingLevel(agentModeEnabled = false))
+        assertEquals("low", enabled.withChatModeReasoning(agentModeEnabled = false).reasoningEffort)
+        assertEquals("high", enabled.withChatModeReasoning(agentModeEnabled = true).reasoningEffort)
+        assertEquals("low", enabled.withChatModeReasoning(false).toPiThinkingLevel())
+    }
+
+    @Test
+    fun normalChatThinkingSwitchPicksMediumAndKeepsChosenStrength() {
+        assertEquals("medium", com.zhousl.aether.ui.normalChatThinkingToggled("off", true))
+        assertEquals("high", com.zhousl.aether.ui.normalChatThinkingToggled("high", true))
+        assertEquals("off", com.zhousl.aether.ui.normalChatThinkingToggled("high", false))
     }
 
     @Test

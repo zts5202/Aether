@@ -418,6 +418,8 @@ fun SettingsScreen(
     defaultTitleModelKey: String,
     defaultNamingModelKey: String,
     defaultCompactingModelKey: String,
+    normalChatReasoningEffort: String = "off",
+    onNormalChatReasoningEffortChange: (String) -> Unit = {},
     providerConfigs: List<LlmProviderConfig>,
     usageStatisticsSnapshots: List<ChatUsageStatisticsSnapshot>,
     scheduledTasks: List<ScheduledTask>,
@@ -771,6 +773,8 @@ fun SettingsScreen(
                 onOpenDefaultTitleModel = { currentPage = SettingsPage.DefaultTitleModel.name },
                 onOpenDefaultNamingModel = { currentPage = SettingsPage.DefaultNamingModel.name },
                 onOpenDefaultCompactingModel = { currentPage = SettingsPage.DefaultCompactingModel.name },
+                normalChatReasoningEffort = normalChatReasoningEffort,
+                onNormalChatReasoningEffortChange = onNormalChatReasoningEffortChange,
                 onBack = { currentPage = SettingsPage.Providers.name },
             )
 
@@ -2425,6 +2429,8 @@ private fun DefaultModelsPage(
     onOpenDefaultTitleModel: () -> Unit,
     onOpenDefaultNamingModel: () -> Unit,
     onOpenDefaultCompactingModel: () -> Unit,
+    normalChatReasoningEffort: String,
+    onNormalChatReasoningEffortChange: (String) -> Unit,
     onBack: () -> Unit,
 ) {
     val automaticChatLabel = modelOptions.findModelOption(
@@ -2495,6 +2501,11 @@ private fun DefaultModelsPage(
                 onClick = onOpenDefaultCompactingModel,
             )
         }
+        Spacer(Modifier.height(8.dp))
+        NormalChatThinkingCard(
+            effort = normalChatReasoningEffort,
+            onEffortChange = onNormalChatReasoningEffortChange,
+        )
     }
 }
 
@@ -6485,5 +6496,57 @@ private fun SettingsCircleButton(
             contentDescription = contentDescription,
             tint = if (enabled) AetherOnSurface else AetherOnSurface.copy(alpha = 0.45f),
         )
+    }
+}
+
+internal val NormalChatThinkingStrengths: List<Pair<String, String>> = listOf(
+    "low" to "低",
+    "medium" to "中",
+    "high" to "高",
+)
+
+/** Turning the switch on picks a medium strength unless one is already selected. */
+internal fun normalChatThinkingToggled(current: String, enabled: Boolean): String =
+    when {
+        !enabled -> "off"
+        current != "off" && current.isNotBlank() -> current
+        else -> "medium"
+    }
+
+@Composable
+private fun NormalChatThinkingCard(
+    effort: String,
+    onEffortChange: (String) -> Unit,
+) {
+    val enabled = effort != "off"
+    SettingsCardGroup {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SettingsToggleRow(
+                title = "普通聊天开启思考",
+                subtitle = "默认关闭，回复更快。智能体（手机操作）模式不受影响。",
+                checked = enabled,
+                verticalAlignment = Alignment.CenterVertically,
+                onCheckedChange = { onEffortChange(normalChatThinkingToggled(effort, it)) },
+            )
+            if (enabled) {
+                Text("思考强度", style = MaterialTheme.typography.bodyMedium, color = AetherOnSurface)
+                val selectedIndex = NormalChatThinkingStrengths.indexOfFirst { it.first == effort }
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    NormalChatThinkingStrengths.forEachIndexed { index, (value, label) ->
+                        SegmentedButton(
+                            selected = index == selectedIndex,
+                            onClick = { onEffortChange(value) },
+                            shape = SegmentedButtonDefaults.itemShape(index, NormalChatThinkingStrengths.size),
+                        ) { Text(label) }
+                    }
+                }
+                if (selectedIndex < 0) {
+                    Text("当前强度：$effort（在聊天框里选的）", style = MaterialTheme.typography.bodySmall, color = AetherOnSurfaceVariant)
+                }
+            }
+        }
     }
 }

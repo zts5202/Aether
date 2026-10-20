@@ -217,6 +217,8 @@ data class AppSettings(
     val compatibilityMode: Boolean = false,
     val developerRoleUnsupported: Boolean = false,
     val reasoningEffort: String = DefaultReasoningEffort,
+    /** Thinking level for normal (non-Agent) chat; independent of Agent mode's [reasoningEffort]. */
+    val normalChatReasoningEffort: String = DefaultReasoningEffort,
     val systemPrompt: String = platformDefaultSystemPrompt(),
     val llmInactivityReconnectTimeoutSeconds: Int = DefaultLlmInactivityReconnectTimeoutSeconds,
     val keepTasksRunningInBackground: Boolean = true,
@@ -272,6 +274,10 @@ data class TermuxEnvironmentVariable(
 
 const val CurrentOnboardingVersion = 1
 const val DefaultReasoningEffort = "off"
+
+/** Settings used for one turn: normal chat swaps in [AppSettings.normalChatReasoningEffort]. */
+fun AppSettings.withChatModeReasoning(agentModeEnabled: Boolean): AppSettings =
+    if (agentModeEnabled) this else copy(reasoningEffort = normalizeReasoningEffort(normalChatReasoningEffort))
 val SupportedReasoningEfforts: List<String> = listOf(
     "off",
     "minimal",

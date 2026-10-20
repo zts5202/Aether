@@ -31,6 +31,7 @@ class AetherSettingsStoreTest {
             themeMode = AppThemeMode.Dark,
             systemPrompt = "Keep these instructions",
             reasoningEffort = "high",
+            normalChatReasoningEffort = "low",
             llmInactivityReconnectTimeoutSeconds = 240,
             keepTasksRunningInBackground = false,
             notifyOnTaskCompletion = false,
