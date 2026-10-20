@@ -996,7 +996,8 @@ private fun ConversationModelSelector(
             option.baseUrl,
         )
     }.orEmpty()
-    val effectiveReasoningEffort = selectedOption?.let { option ->
+    val usesThinkingToggleFallback = supportedThinkingLevels == com.zhousl.aether.data.ThinkingToggleLevels
+    val effectiveReasoningEffort = selectedOption?.takeUnless { usesThinkingToggleFallback }?.let { option ->
         thinkingLevelClampsByProviderModel[thinkingCatalogKey(option.piProviderId, option.modelId)]
             ?.get(reasoningEffort)
     } ?: reasoningEffort
@@ -1184,7 +1185,7 @@ private fun ConversationModelSelector(
 
 @Composable
 private fun reasoningEffortLabel(effort: String): String = when (effort.trim().lowercase()) {
-    "off" -> stringResource(R.string.chat_reasoning_effort_off)
+    "off", "none" -> stringResource(R.string.chat_reasoning_effort_off)
     "minimal" -> stringResource(R.string.chat_reasoning_effort_minimal)
     "low" -> stringResource(R.string.chat_reasoning_effort_low)
     "medium" -> stringResource(R.string.chat_reasoning_effort_medium)

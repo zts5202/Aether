@@ -25,6 +25,7 @@ val ThinkingToggleLevels: List<String> = listOf("off", "low", "medium", "high")
 fun hasThinkingToggle(piProviderId: String, modelId: String, baseUrl: String): Boolean {
     if (isXiaomiMiMoEndpoint(baseUrl, piProviderId)) return true
     val model = modelId.trim().lowercase()
+    if ("mimo" in model) return true
     return "deepseek" in piProviderId.trim().lowercase() && "flash" in model
 }
 
@@ -34,8 +35,11 @@ fun effectiveThinkingLevels(
     piProviderId: String,
     modelId: String,
     baseUrl: String,
-): List<String> = catalogLevels?.takeIf { it.isNotEmpty() }
-    ?: if (hasThinkingToggle(piProviderId, modelId, baseUrl)) ThinkingToggleLevels else emptyList()
+): List<String> {
+    val onlyOff = catalogLevels.orEmpty().all { it.trim().lowercase() in setOf("off", "none") }
+    if (onlyOff && hasThinkingToggle(piProviderId, modelId, baseUrl)) return ThinkingToggleLevels
+    return catalogLevels.orEmpty()
+}
 
 fun xiaomiApiKeyEndpointMismatchMessage(baseUrl: String, apiKey: String): String? {
     val host = endpointHost(baseUrl)
