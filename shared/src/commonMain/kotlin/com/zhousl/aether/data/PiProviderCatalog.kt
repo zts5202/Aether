@@ -74,7 +74,7 @@ object PiProviderCatalog {
         builtin("cloudflare-ai-gateway", "Cloudflare AI Gateway", "", "claude-3-5-haiku", category = "Cloud"),
         builtin("cloudflare-workers-ai", "Cloudflare Workers AI", "", "@cf/google/gemma-4-26b-a4b-it", category = "Cloud"),
         builtin("vercel-ai-gateway", "Vercel AI Gateway", "https://ai-gateway.vercel.sh", "anthropic/claude-sonnet-4.5", category = "Cloud"),
-        builtin("deepseek", "DeepSeek", "https://api.deepseek.com", "deepseek-v4-flash", category = "Model labs"),
+        builtin("deepseek", "DeepSeek", "https://api.deepseek.com", "deepseek-flash", category = "Model labs"),
         builtin("xai", "xAI", "https://api.x.ai/v1", "grok-4.3", category = "Model labs"),
         builtin("mistral", "Mistral", "https://api.mistral.ai", "mistral-large-latest", category = "Model labs"),
         builtin("groq", "Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", category = "Model labs"),

@@ -17,6 +17,16 @@ import org.junit.Test
 
 class PiProviderMapperTest {
     @Test
+    fun deepSeekDefaultModelIsOfficialFlashId() {
+        assertEquals("deepseek-flash", PiProviderCatalog.find("deepseek")!!.defaultModelId)
+        assertEquals(
+            "accounts/fireworks/models/deepseek-v4-flash",
+            PiProviderCatalog.find("fireworks")!!.defaultModelId,
+        )
+        assertEquals("deepseek-v4-flash", PiProviderCatalog.find("opencode-go")!!.defaultModelId)
+    }
+
+    @Test
     fun xiaomiDefaultsToMimoV26FlashAndKeepsThinkingTransportWhenOff() {
         assertEquals("mimo-v2.6-flash", PiProviderCatalog.find("xiaomi")!!.defaultModelId)
         assertEquals("mimo-v2.6-flash", PiProviderCatalog.find("xiaomi-token-plan-cn")!!.defaultModelId)
