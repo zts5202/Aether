@@ -147,8 +147,8 @@ fun SettingsCardGroup(content: @Composable () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(AetherSurface),
+            // Liquid glass when the app is dark (falls back to the old flat card otherwise).
+            .aetherGlassOr(RoundedCornerShape(16.dp), AetherSurface),
     ) {
         content()
     }

@@ -1,5 +1,7 @@
 package com.zhousl.aether.ui
 
+import com.kyant.backdrop.backdrops.layerBackdrop
+
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ContextWrapper
@@ -313,15 +315,50 @@ fun AetherApp(
         LocalAetherExtensionUiController provides extensionController,
         LocalShowcaseControls provides showcaseControls,
     ) {
+        // Liquid glass needs a dark page: always on the chat screen, elsewhere only when the theme is dark.
+        val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+        val glassEnabled = uiState.currentScreen == AppScreen.Chat ||
+            uiState.settings.themeMode == com.zhousl.aether.data.AppThemeMode.Dark ||
+            (uiState.settings.themeMode == com.zhousl.aether.data.AppThemeMode.System && systemDark)
+        val glassBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+        val overlayHost = remember { AetherOverlayHost() }
+        val glowSending = uiState.currentScreen == AppScreen.Chat &&
+            uiState.sessionExecutionStates[uiState.currentSessionId]?.isRunning == true
+        var glowTurn by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
+        var glowWasSending by remember { mutableStateOf(glowSending) }
+        LaunchedEffect(glowSending) {
+            if (glowWasSending && !glowSending) glowTurn++
+            glowWasSending = glowSending
+        }
         AetherTheme(
             themeMode = uiState.settings.themeMode,
             forceDark = uiState.currentScreen == AppScreen.Chat,
         ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background,
+                color = if (glassEnabled) Color.Black else MaterialTheme.colorScheme.background,
             ) {
+                androidx.activity.compose.BackHandler(enabled = overlayHost.entries.isNotEmpty()) {
+                    overlayHost.dismissTop()
+                }
+                CompositionLocalProvider(
+                    com.zhousl.aether.ui.glass.LocalGeminiBackdrop provides if (glassEnabled) glassBackdrop else null,
+                    LocalAetherGlass provides if (glassEnabled) com.zhousl.aether.ui.glass.GeminiAetherGlass else null,
+                    LocalAetherOverlayHost provides overlayHost,
+                ) {
                 Box(modifier = Modifier.fillMaxSize()) {
+                    if (glassEnabled) {
+                        // App-wide glow layer: everything glass (chat chrome, drawer, menus, dialogs, settings cards)
+                        // refracts this. Breathing bottom blue glow + thinking glow (palettes A/B/C per turn).
+                        Box(Modifier.fillMaxSize().layerBackdrop(glassBackdrop)) {
+                            com.zhousl.aether.ui.glass.BottomBlueGlow(Modifier.fillMaxSize())
+                            com.zhousl.aether.ui.glass.ThinkingGlow(
+                                active = glowSending,
+                                turn = glowTurn,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
                     AetherExtensionComponentHost(
                         target = AetherExtensionComponentAppContent,
                         modifier = Modifier.fillMaxSize(),
@@ -343,6 +380,8 @@ fun AetherApp(
                         )
                     }
                     AetherExtensionOverlaySlot(Modifier.fillMaxSize())
+                    AetherOverlayHostContent(overlayHost)
+                }
                 }
             }
             piExtensionUiRequest?.let { request ->
@@ -2167,3 +2206,4 @@ private fun defaultPreviewMessages(): List<ChatMessage> = listOf(
         "Start with persistent settings, then call a configurable OpenAI-compatible chat endpoint from the composer.",
     ),
 )
+

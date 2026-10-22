@@ -1,5 +1,7 @@
 package com.zhousl.aether.ui
 
+import androidx.compose.ui.platform.testTag
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.fadeIn
@@ -148,14 +150,19 @@ fun AetherConversationDrawer(
         searchExpanded = false
         searchQuery = ""
     }
-    val drawerBackground = if (permanent) AetherBackground else AetherSidebarBackground
+    val glassOn = LocalAetherGlass.current != null
+    val drawerShape = if (permanent) RoundedCornerShape(0.dp) else {
+        RoundedCornerShape(topEnd = 30.dp, bottomEnd = 30.dp)
+    }
+    val solidDrawerBackground = if (permanent) AetherBackground else AetherSidebarBackground
+    // With liquid glass the whole sheet is glass; the header fade then darkens towards black instead of grey.
+    val drawerBackground = if (glassOn) Color.Black else solidDrawerBackground
 
     ModalDrawerSheet(
-        modifier = Modifier.fillMaxHeight().width(if (permanent) 320.dp else 322.dp),
-        drawerContainerColor = drawerBackground,
-        drawerShape = if (permanent) RoundedCornerShape(0.dp) else {
-            RoundedCornerShape(topEnd = 30.dp, bottomEnd = 30.dp)
-        },
+        modifier = Modifier.fillMaxHeight().width(if (permanent) 320.dp else 322.dp)
+            .then(if (glassOn) Modifier.aetherGlassOr(drawerShape, solidDrawerBackground) else Modifier),
+        drawerContainerColor = if (glassOn) Color.Transparent else drawerBackground,
+        drawerShape = drawerShape,
     ) {
         Box(modifier = Modifier.fillMaxSize().padding(bottom = 18.dp)) {
             if (filteredSessions.isEmpty()) {
@@ -316,9 +323,16 @@ fun AetherConversationDrawer(
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
                     .padding(end = 18.dp, bottom = 18.dp)
-                    .shadow(18.dp, RoundedCornerShape(999.dp), ambientColor = AetherScrim, spotColor = AetherScrim)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color(0xFFAD7BF9))
+                    .then(
+                        if (glassOn) {
+                            Modifier.aetherGlassOr(RoundedCornerShape(999.dp), Color(0xFFAD7BF9), panel = false)
+                        } else {
+                            Modifier
+                                .shadow(18.dp, RoundedCornerShape(999.dp), ambientColor = AetherScrim, spotColor = AetherScrim)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(Color(0xFFAD7BF9))
+                        }
+                    )
                     .clickable {
                         dismissSearch()
                         onNewChat()
@@ -335,38 +349,43 @@ fun AetherConversationDrawer(
                 )
             }
             if (confirmClearAll && clearableSessionCount > 0) {
-                AlertDialog(
-                    onDismissRequest = { confirmClearAll = false },
-                    containerColor = AetherSurface,
-                    titleContentColor = AetherOnSurface,
-                    textContentColor = AetherOnSurfaceVariant,
-                    text = {
+                // Same-window glass dialog (a platform Dialog window could not refract the app's glow layer).
+                AetherOverlayDialog(onDismissRequest = { confirmClearAll = false }) {
+                    Column(
+                        modifier = Modifier
+                            .width(300.dp)
+                            .aetherGlassOr(RoundedCornerShape(28.dp), AetherSurface)
+                            .padding(start = 24.dp, end = 12.dp, top = 24.dp, bottom = 12.dp)
+                            .testTag("clearAllDialog"),
+                    ) {
                         Text(
                             text = stringResource(
                                 Res.string.chat_clear_all_conversations_message,
                                 clearableSessionCount,
                             ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = AetherOnSurface,
+                            modifier = Modifier.padding(end = 12.dp),
                         )
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { confirmClearAll = false }) {
-                            Text(stringResource(Res.string.chat_clear_all_conversations_dismiss))
+                        Spacer(Modifier.height(16.dp))
+                        Row(modifier = Modifier.align(Alignment.End)) {
+                            TextButton(onClick = { confirmClearAll = false }) {
+                                Text(stringResource(Res.string.chat_clear_all_conversations_dismiss), color = AetherOnSurface)
+                            }
+                            TextButton(
+                                onClick = {
+                                    confirmClearAll = false
+                                    onClearAllSessions()
+                                },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = sharedDrawerDestructiveColor(),
+                                ),
+                            ) {
+                                Text(stringResource(Res.string.chat_clear_all_conversations_confirm))
+                            }
                         }
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                confirmClearAll = false
-                                onClearAllSessions()
-                            },
-                            colors = ButtonDefaults.textButtonColors(
-                                contentColor = SharedDrawerDestructiveColor,
-                            ),
-                        ) {
-                            Text(stringResource(Res.string.chat_clear_all_conversations_confirm))
-                        }
-                    },
-                )
+                    }
+                }
             }
         }
     }
@@ -386,7 +405,7 @@ private fun SharedDrawerClearAllRow(onClick: () -> Unit) {
         Text(
             text = stringResource(Res.string.chat_clear_all_conversations),
             style = MaterialTheme.typography.bodyMedium,
-            color = SharedDrawerDestructiveColor,
+            color = sharedDrawerDestructiveColor(),
         )
     }
 }
@@ -395,9 +414,7 @@ private fun SharedDrawerClearAllRow(onClick: () -> Unit) {
 private fun SharedDrawerSearchField(value: String, onValueChange: (String) -> Unit) {
     Row(
         modifier = Modifier
-            .shadow(12.dp, RoundedCornerShape(24.dp), ambientColor = AetherScrim, spotColor = AetherScrim)
-            .clip(RoundedCornerShape(24.dp))
-            .background(AetherSurface)
+            .aetherGlassOr(RoundedCornerShape(24.dp), AetherSurface)
             .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -565,15 +582,9 @@ private fun SharedDrawerActionMenu(
     val visibility = remember { MutableTransitionState(false) }
     visibility.targetState = expanded
     if (!visibility.currentState && !visibility.targetState) return
-    Popup(
-        alignment = Alignment.TopEnd,
-        offset = IntOffset(0, 34),
+    AetherAnchoredPopup(
+        placement = alignedPlacement(Alignment.TopEnd, IntOffset(0, 34)),
         onDismissRequest = onDismiss,
-        properties = PopupProperties(
-            focusable = true,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-        ),
     ) {
         AnimatedVisibility(
             visibleState = visibility,
@@ -583,10 +594,9 @@ private fun SharedDrawerActionMenu(
             Column(
                 modifier = Modifier
                     .widthIn(min = 188.dp, max = 220.dp)
-                    .shadow(18.dp, RoundedCornerShape(24.dp), ambientColor = AetherScrim, spotColor = AetherScrim)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(AetherSurface)
-                    .padding(8.dp),
+                    .aetherGlassOr(RoundedCornerShape(24.dp), AetherSurface)
+                    .padding(8.dp)
+                    .testTag("drawerSessionMenu"),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 SharedDrawerActionRow(stringResource(Res.string.common_rename), onRename)
@@ -620,7 +630,7 @@ private fun SharedDrawerActionRow(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (destructive) Color(0xFFB42318) else AetherOnSurface,
+            color = if (destructive) sharedDrawerDestructiveColor() else AetherOnSurface,
         )
     }
 }
@@ -642,3 +652,8 @@ private fun sharedDrawerOverlayTailGradient(baseColor: Color): Brush = Brush.ver
         1.0f to Color.Transparent,
     )
 )
+
+/** Red that stays readable on dark glass (the light-theme red is too dark there). */
+@Composable
+private fun sharedDrawerDestructiveColor(): Color =
+    if (LocalAetherGlass.current != null) Color(0xFFFF8A80) else SharedDrawerDestructiveColor

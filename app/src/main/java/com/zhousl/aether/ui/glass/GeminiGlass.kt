@@ -238,37 +238,75 @@ private fun StarsShader(time: State<Float>, lastTyped: State<Float>, alpha: () -
 
 fun nowSeconds(): Float = System.nanoTime() / 1e9f
 
-/** Backdrop holding the glows; null outside the chat screen, where [geminiGlass] falls back to a flat tint. */
+/** Backdrop holding the app's glow layer; null when no glass should be drawn (flat fallback). */
 val LocalGeminiBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
-/** 0.4.2/0.4.4 rim: 1dp highlight with default (soft) blur. */
+/** Soft 1dp rim (default blur), as in GlassDemo 0.4.2/0.4.4. */
 private val SoftRimHighlight = Highlight(width = 1.dp)
 private val GlassSurface = Color.White.copy(alpha = 0.05f)
+/** Panels (menus, drawer, dialogs, cards) carry text over bright glows: darken behind the text for contrast. */
+private val PanelSurface = Color.Black.copy(alpha = 0.38f)
 private val LegacyTint = Color(0xFF2A2550).copy(alpha = 0.80f)
 
 /**
- * Liquid glass exactly as GlassDemo 0.4.4/0.4.5 `glassOnBlack`: saturation 1.5, blur 4dp, lens refraction
- * (edge band [edge], amount 28dp, depth effect, optional chromatic dispersion), soft 1dp rim, no shadow.
+ * Edge refraction parameters for 2.1.27 (stronger, closer to iOS 26 than GlassDemo 0.4.5's 10-16dp / 28dp):
+ * the band is [GlassRefraction.bandFraction] of the shorter side (clamped to [GlassRefraction.minBand]..[GlassRefraction.maxBand]),
+ * the displacement is [GlassRefraction.amountFactor] x the band, depth effect on, light chromatic dispersion.
  */
+object GlassRefraction {
+    val minBand = 14.dp
+    val maxBand = 32.dp
+    const val bandFraction = 0.42f
+    const val amountFactor = 1.9f
+    val blur = 4.dp
+
+    /** Refraction band in px for an element of [shortSidePx], given [density] (px per dp). */
+    fun bandPx(shortSidePx: Float, density: Float): Float =
+        (shortSidePx * bandFraction).coerceIn(minBand.value * density, maxBand.value * density)
+            .coerceAtMost(shortSidePx / 2f)
+
+    /**
+     * Backdrop capture padding needed so the lens can sample OUTSIDE the element: the library's lens consumes
+     * `padding - band` and displaces by up to `amount`, so padding must be >= band + amount (blur alone only gives 4dp,
+     * which is what made 2.1.26's edge look like a thin rim).
+     */
+    fun paddingPx(bandPx: Float): Float = bandPx * (1f + amountFactor)
+}
+
 @Composable
-fun Modifier.geminiGlass(shape: Shape, edge: Dp = 10.dp, dispersion: Boolean = false): Modifier {
+fun Modifier.geminiGlass(shape: Shape, edge: Dp? = null, dispersion: Boolean = true, panel: Boolean = false): Modifier {
     val backdrop = LocalGeminiBackdrop.current
         ?: return this.clip(shape).background(Color.White.copy(alpha = 0.08f)).border(1.dp, Color.White.copy(alpha = 0.10f), shape)
     return this.drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
         effects = {
+            val shortSide = kotlin.math.min(size.width, size.height)
+            val band = edge?.toPx()?.coerceAtMost(shortSide / 2f) ?: GlassRefraction.bandPx(shortSide, density)
             colorControls(saturation = 1.5f)
-            blur(4.dp.toPx())
-            lens(refractionHeight = edge.toPx(), refractionAmount = 28.dp.toPx(), depthEffect = true, chromaticAberration = dispersion)
+            // Widen the capture area first; blur() keeps the larger padding (it only raises it).
+            padding = kotlin.math.max(padding, GlassRefraction.paddingPx(band))
+            blur(GlassRefraction.blur.toPx())
+            lens(
+                refractionHeight = band,
+                refractionAmount = band * GlassRefraction.amountFactor,
+                depthEffect = true,
+                chromaticAberration = dispersion,
+            )
         },
         highlight = { SoftRimHighlight },
         shadow = null,
         onDrawSurface = {
-            drawRect(GlassSurface)
+            drawRect(if (panel) PanelSurface else GlassSurface)
             if (Build.VERSION.SDK_INT < 31) drawRect(LegacyTint)
         },
     )
+}
+
+/** Implementation of the shared [com.zhousl.aether.ui.AetherGlass] hook. */
+object GeminiAetherGlass : com.zhousl.aether.ui.AetherGlass {
+    @Composable
+    override fun Modifier.glass(shape: Shape, panel: Boolean): Modifier = geminiGlass(shape, panel = panel)
 }
 
 /** Gemini-like four-colour sparkle drawn as a vector path (no emoji, no brand asset). */

@@ -1283,7 +1283,7 @@ private fun SettingsHub(
     }
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = AetherSettingsBackground,
+        containerColor = if (LocalAetherGlass.current != null) Color.Transparent else AetherSettingsBackground,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { innerPadding ->
         Box(

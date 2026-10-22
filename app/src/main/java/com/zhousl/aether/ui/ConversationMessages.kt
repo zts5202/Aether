@@ -1,5 +1,9 @@
 package com.zhousl.aether.ui
 
+import androidx.compose.ui.unit.LayoutDirection
+
+import androidx.compose.ui.platform.testTag
+
 import com.zhousl.aether.ui.glass.GeminiColors
 import com.zhousl.aether.ui.glass.GeminiSymbols
 import com.zhousl.aether.ui.glass.geminiGlass
@@ -602,15 +606,9 @@ private fun UserMessageActionDialog(
         IntOffset(x = 0, y = 30.dp.roundToPx())
     }
 
-    Popup(
-        alignment = Alignment.TopEnd,
-        offset = popupOffset,
+    AetherAnchoredPopup(
+        placement = alignedPlacement(Alignment.TopEnd, popupOffset),
         onDismissRequest = onDismissRequest,
-        properties = PopupProperties(
-            focusable = true,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-        ),
     ) {
         AnimatedVisibility(
             visibleState = menuVisibility,
@@ -630,10 +628,9 @@ private fun UserMessageActionDialog(
             Column(
                 modifier = Modifier
                     .width(228.dp)
-                    .shadow(20.dp, RoundedCornerShape(30.dp), ambientColor = AetherScrim, spotColor = AetherScrim)
-                    .clip(RoundedCornerShape(30.dp))
-                    .background(AetherSurface)
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                    .aetherGlassOr(RoundedCornerShape(30.dp), AetherSurface)
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .testTag("userMessageMenu"),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 if (timestamp.isNotBlank()) {
@@ -816,7 +813,7 @@ private fun UserTextBubble(
     Box(
         modifier = Modifier
             .widthIn(max = maxWidth)
-            .geminiGlass(RoundedCornerShape(24.dp), edge = 12.dp)
+            .geminiGlass(RoundedCornerShape(24.dp))
             .clip(RoundedCornerShape(24.dp))
             .combinedClickable(
                 onClick = {},
@@ -3194,8 +3191,13 @@ private fun AssistantMessageActions(
         label = "statistics_popup_scale",
     )
     Box {
+        // Gemini-style action bar as a liquid-glass capsule.
         Row(
-            modifier = Modifier.offset(x = (-12).dp),
+            modifier = Modifier
+                .offset(x = (-4).dp)
+                .aetherGlassOr(RoundedCornerShape(22.dp), AetherSurface, panel = false)
+                .padding(horizontal = 4.dp)
+                .testTag("assistantActionBar"),
             horizontalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             AssistantMessageAction(
@@ -3225,10 +3227,14 @@ private fun AssistantMessageActions(
             )
         }
         if (keepStatisticsPopup || showStatistics) {
-            Popup(
-                popupPositionProvider = remember { StatisticsPopupPositionProvider() },
+            val statisticsPositionProvider = remember { StatisticsPopupPositionProvider() }
+            AetherAnchoredPopup(
+                placement = remember(statisticsPositionProvider) {
+                    AetherPopupPlacement { anchor, window, content ->
+                        statisticsPositionProvider.calculatePosition(anchor, window, LayoutDirection.Ltr, content)
+                    }
+                },
                 onDismissRequest = { showStatistics = false },
-                properties = PopupProperties(focusable = true),
             ) {
                 MessageStatisticsPopup(
                     usageStatistics = usageStatistics,
@@ -3272,9 +3278,7 @@ private fun MessageStatisticsPopup(
     Column(
         modifier = modifier
             .widthIn(min = 236.dp, max = 300.dp)
-            .shadow(18.dp, RoundedCornerShape(22.dp), ambientColor = AetherScrim, spotColor = AetherScrim)
-            .clip(RoundedCornerShape(22.dp))
-            .background(AetherSurface.copy(alpha = 0.98f))
+            .aetherGlassOr(RoundedCornerShape(22.dp), AetherSurface.copy(alpha = 0.98f))
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

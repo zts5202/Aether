@@ -3,6 +3,7 @@ package com.zhousl.aether.ui
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -19,7 +20,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w411dp-h915dp-xxhdpi")
+@Config(sdk = [32], qualifiers = "w411dp-h915dp-xxhdpi")
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
 class GeminiChatScreenTest {
     @get:Rule
     val rule = createComposeRule()
@@ -34,8 +36,11 @@ class GeminiChatScreenTest {
     private var newChatClicks = 0
     private var pauseClicks = 0
 
+    private var hostView: android.view.View? = null
+
     private fun setScreen(messages: List<ChatMessage>, sending: Boolean, input: String = "") {
         rule.setContent {
+            hostView = androidx.compose.ui.platform.LocalView.current
             AetherTheme(forceDark = true) {
                 ConversationScreen(
                     conversationStateKey = "s1", messages = messages, workspaceDirectory = "",
@@ -93,5 +98,40 @@ class GeminiChatScreenTest {
         assertEquals(0, rule.onAllNodesWithTag("inputStars").fetchSemanticsNodes().size)
         rule.onNodeWithContentDescription("New chat", ignoreCase = true).performClick()
         assertEquals(1, newChatClicks)
+    }
+
+    /**
+     * 2.1.26 bug: the "+" button covered the end of the last AI reply. The composer sits above the navigation bar
+     * plus an 18dp lift, but the list's bottom padding ignored the navigation bar, so the last ~navbar px of the
+     * conversation stayed under the composer even when scrolled to the very bottom.
+     */
+    @Test
+    fun lastReplyEndsAboveComposerWithNavigationBar() {
+        val longReply = (1..400).joinToString(" ") { "第${it}句回答内容。" } + " 最后一句结尾"
+        setScreen(
+            listOf(
+                ChatMessage(id = "u1", author = MessageAuthor.User, text = "问题"),
+                ChatMessage(id = "a1", author = MessageAuthor.Agent, text = longReply),
+            ),
+            sending = false,
+        )
+        rule.runOnIdle {
+            val navBar = androidx.core.view.WindowInsetsCompat.Builder()
+                .setInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars(), androidx.core.graphics.Insets.of(0, 0, 0, 144))
+                .setInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars(), androidx.core.graphics.Insets.of(0, 96, 0, 0))
+                .build()
+            androidx.core.view.ViewCompat.dispatchApplyWindowInsets(hostView!!, navBar)
+        }
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(2_000)
+        rule.waitForIdle()
+        val plusTop = rule.onNodeWithTag("composerPlus").fetchSemanticsNode().boundsInRoot.top
+        val textBottom = rule.onNodeWithText("最后一句结尾", substring = true).fetchSemanticsNode().boundsInRoot.bottom
+        val bars = rule.onAllNodesWithTag("assistantActionBar").fetchSemanticsNodes()
+        val contentBottom = maxOf(textBottom, bars.maxOfOrNull { it.boundsInRoot.bottom } ?: 0f)
+        org.junit.Assert.assertTrue(
+            "last reply content bottom=$contentBottom must stay above the + button top=$plusTop",
+            contentBottom <= plusTop,
+        )
     }
 }

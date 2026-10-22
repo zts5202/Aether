@@ -1,5 +1,7 @@
 package com.zhousl.aether.ui
 
+import androidx.compose.ui.platform.testTag
+
 import com.zhousl.aether.ui.glass.BottomBlueGlow
 import com.zhousl.aether.ui.glass.GeminiColors
 import com.zhousl.aether.ui.glass.GeminiSparkle
@@ -402,6 +404,8 @@ fun ConversationScreen(
     onDismissTermuxSetupNotice: () -> Unit,
     onDismissStarterPromptHint: () -> Unit,
     isSending: Boolean,
+    /** Draw a private glow layer when no app-wide one exists (tests/previews). */
+    standaloneGlass: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
     val listState = rememberSaveable(
@@ -459,16 +463,12 @@ fun ConversationScreen(
     var composerBodyHeightPx by remember { mutableIntStateOf(0) }
     var pendingGenerationHeightPx by remember { mutableIntStateOf(0) }
     var composerFocused by remember { mutableStateOf(false) }
-    // Gemini chrome: thinking palette rotates A -> B -> C each finished turn; stars twinkle after typing.
-    var glowTurn by rememberSaveable { mutableIntStateOf(0) }
-    var wasSending by remember { mutableStateOf(isSending) }
-    LaunchedEffect(isSending) {
-        if (wasSending && !isSending) glowTurn++
-        wasSending = isSending
-    }
+    // Stars twinkle after typing. (Glows and their A/B/C palette rotation live in the app-wide backdrop, AetherApp.)
     val lastTypedSeconds = remember { mutableFloatStateOf(-100f) }
     LaunchedEffect(inputValue) { if (inputValue.isNotEmpty()) lastTypedSeconds.floatValue = nowSeconds() }
-    val geminiBackdrop = rememberLayerBackdrop()
+    // Tests and previews render this screen without AetherApp: give them their own glow layer.
+    val appBackdrop = LocalGeminiBackdrop.current
+    val ownBackdrop = if (appBackdrop == null && LocalAetherGlass.current == null && standaloneGlass) rememberLayerBackdrop() else null
     val density = LocalDensity.current
     val fallbackTopBarBodyHeight = with(density) {
         WindowInsets.statusBars.getTop(this).toDp() + 68.dp
@@ -488,6 +488,10 @@ fun ConversationScreen(
         label = "conversation_empty_ime_bottom",
     )
     val animatedImeBottomPx = with(density) { animatedImeBottom.roundToPx() }
+    // The composer sits above the navigation bar and is lifted by up to 18dp, so the
+    // list must reserve that space too or the + button covers the end of a reply.
+    val navigationBarBottom = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    val composerChromeBottom = (navigationBarBottom - animatedImeBottom).coerceAtLeast(0.dp) + 18.dp
     val conversationScrollConnection = remember(listState) {
         object : NestedScrollConnection {
             override fun onPostScroll(
@@ -619,20 +623,24 @@ fun ConversationScreen(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = Color.Black,
+        // Transparent: the black page and the glows are drawn by AetherApp's app-wide backdrop layer underneath.
+        containerColor = if (ownBackdrop == null) Color.Transparent else Color.Black,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { innerPadding ->
-        CompositionLocalProvider(LocalGeminiBackdrop provides geminiBackdrop) {
+        CompositionLocalProvider(
+            LocalGeminiBackdrop provides (ownBackdrop ?: appBackdrop),
+            LocalAetherGlass provides (if (ownBackdrop != null) com.zhousl.aether.ui.glass.GeminiAetherGlass else LocalAetherGlass.current),
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
                 .padding(innerPadding)
         ) {
-            // Everything the liquid glass refracts lives in this layer: the breathing blue glow and the thinking glow.
-            Box(Modifier.fillMaxSize().layerBackdrop(geminiBackdrop)) {
-                BottomBlueGlow(Modifier.fillMaxSize())
-                ThinkingGlow(active = isSending, turn = glowTurn, modifier = Modifier.fillMaxSize())
+            if (ownBackdrop != null) {
+                Box(Modifier.fillMaxSize().layerBackdrop(ownBackdrop)) {
+                    BottomBlueGlow(Modifier.fillMaxSize())
+                    ThinkingGlow(active = isSending, turn = 0, modifier = Modifier.fillMaxSize())
+                }
             }
             InputStars(
                 visible = composerFocused,
@@ -698,7 +706,7 @@ fun ConversationScreen(
                         start = 20.dp,
                         end = 20.dp,
                         top = topBarBodyHeight + 10.dp,
-                        bottom = composerBodyHeight + animatedImeBottom + 28.dp,
+                        bottom = composerBodyHeight + animatedImeBottom + composerChromeBottom + 28.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(22.dp),
                 ) {
@@ -912,7 +920,7 @@ fun ConversationScreen(
                     .fillMaxSize()
                     .padding(
                         top = topBarBodyHeight + 8.dp,
-                        bottom = composerBodyHeight + animatedImeBottom + 30.dp,
+                        bottom = composerBodyHeight + animatedImeBottom + composerChromeBottom + 30.dp,
                     ),
                 onNavigate = { timelineIndex ->
                     timelineTargets.getOrNull(timelineIndex)?.let { target ->
@@ -1169,15 +1177,9 @@ private fun ConversationModelSelector(
         }
 
         if (menuVisibility.currentState || menuVisibility.targetState) {
-            Popup(
-                alignment = Alignment.TopStart,
-                offset = IntOffset(0, anchorHeightPx + with(density) { 10.dp.roundToPx() }),
+            AetherAnchoredPopup(
+                placement = alignedPlacement(Alignment.TopStart, IntOffset(0, anchorHeightPx + with(density) { 10.dp.roundToPx() })),
                 onDismissRequest = { expanded = false },
-                properties = PopupProperties(
-                    focusable = true,
-                    dismissOnBackPress = true,
-                    dismissOnClickOutside = true,
-                ),
             ) {
                 androidx.compose.animation.AnimatedVisibility(
                     visibleState = menuVisibility,
@@ -1237,10 +1239,9 @@ private fun ConversationModelSelector(
                         },
                         modifier = Modifier
                             .width(menuWidth)
-                            .shadow(14.dp, RoundedCornerShape(22.dp), ambientColor = AetherScrim, spotColor = AetherScrim)
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(AetherSurface)
-                            .padding(vertical = 5.dp),
+                            .aetherGlassOr(RoundedCornerShape(22.dp), AetherSurface)
+                            .padding(vertical = 5.dp)
+                            .testTag("modelMenu"),
                         label = "conversation-model-menu-mode",
                     ) {
                         if (it) {
@@ -2790,7 +2791,7 @@ private fun ConversationComposerBar(
                             animationSpec = tween(durationMillis = 320, easing = ChatGptMotionEasing),
                         )
                         // Gemini input capsule: liquid glass with a 16dp refraction band and colour dispersion.
-                        .geminiGlass(fieldShape, edge = 16.dp, dispersion = true)
+                        .geminiGlass(fieldShape)
                         .clip(fieldShape)
                         .padding(
                             start = fieldContentStartPadding,
@@ -2909,17 +2910,9 @@ private fun ConversationComposerBar(
                                     },
                                 )
                                 if (isSending && (followUpMenuVisibility.currentState || followUpMenuVisibility.targetState)) {
-                                    Popup(
-                                        alignment = Alignment.BottomEnd,
-                                        offset = with(density) {
-                                            IntOffset(0, -12.dp.roundToPx())
-                                        },
+                                    AetherAnchoredPopup(
+                                        placement = alignedPlacement(Alignment.BottomEnd, with(density) { IntOffset(0, -12.dp.roundToPx()) }),
                                         onDismissRequest = { followUpMenuExpanded = false },
-                                        properties = PopupProperties(
-                                            focusable = true,
-                                            dismissOnBackPress = true,
-                                            dismissOnClickOutside = true,
-                                        ),
                                     ) {
                                         androidx.compose.animation.AnimatedVisibility(
                                             visibleState = followUpMenuVisibility,
@@ -2939,9 +2932,7 @@ private fun ConversationComposerBar(
                                             Column(
                                                 modifier = Modifier
                                                     .widthIn(min = 252.dp, max = 284.dp)
-                                                    .shadow(20.dp, RoundedCornerShape(30.dp), ambientColor = AetherScrim, spotColor = AetherScrim)
-                                                    .clip(RoundedCornerShape(30.dp))
-                                                    .background(AetherSurface)
+                                                    .aetherGlassOr(RoundedCornerShape(30.dp), AetherSurface)
                                                     .padding(horizontal = 12.dp, vertical = 12.dp),
                                                 verticalArrangement = Arrangement.spacedBy(2.dp),
                                             ) {
@@ -2981,8 +2972,9 @@ private fun ConversationComposerBar(
                 Box(
                     modifier = Modifier
                         .size(48.dp)
-                        .then(if (plusSeparated) Modifier.geminiGlass(CircleShape) else Modifier)
+                        .geminiGlass(CircleShape)
                         .clip(CircleShape)
+                        .testTag("composerPlus")
                         .clickable(onClick = { attachmentMenuExpanded = !attachmentMenuExpanded }),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -2995,17 +2987,9 @@ private fun ConversationComposerBar(
                 }
 
                 if (attachmentMenuVisibility.currentState || attachmentMenuVisibility.targetState) {
-                    Popup(
-                        alignment = Alignment.BottomStart,
-                        offset = with(density) {
-                            IntOffset(0, -42.dp.roundToPx())
-                        },
+                    AetherAnchoredPopup(
+                        placement = alignedPlacement(Alignment.BottomStart, with(density) { IntOffset(0, -42.dp.roundToPx()) }),
                         onDismissRequest = { attachmentMenuExpanded = false },
-                        properties = PopupProperties(
-                            focusable = true,
-                            dismissOnBackPress = true,
-                            dismissOnClickOutside = true,
-                        ),
                     ) {
                         androidx.compose.animation.AnimatedVisibility(
                             visibleState = attachmentMenuVisibility,
@@ -3025,9 +3009,8 @@ private fun ConversationComposerBar(
                             Box(
                                 modifier = Modifier
                                     .widthIn(min = 284.dp, max = 304.dp)
-                                    .shadow(20.dp, RoundedCornerShape(30.dp), ambientColor = AetherScrim, spotColor = AetherScrim)
-                                    .clip(RoundedCornerShape(30.dp))
-                                    .background(AetherSurface),
+                                    .aetherGlassOr(RoundedCornerShape(30.dp), AetherSurface)
+                                    .testTag("plusMenu"),
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -4151,9 +4134,9 @@ private fun ComposerActionChip(
     Row(
         modifier = Modifier
             .widthIn(max = 220.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xFFE8F1FF))
-            .padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+            .aetherGlassOr(RoundedCornerShape(18.dp), Color(0xFFE8F1FF), panel = false)
+            .padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp)
+            .testTag("composerActionChip"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -4167,7 +4150,7 @@ private fun ComposerActionChip(
             text = label,
             modifier = Modifier.weight(1f, fill = false),
             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-            color = Color(0xFF2E6FD5),
+            color = if (LocalAetherGlass.current != null) Color(0xFFAFCBFF) else Color(0xFF2E6FD5),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
