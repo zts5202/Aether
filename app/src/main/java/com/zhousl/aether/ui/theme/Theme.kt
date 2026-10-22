@@ -159,9 +159,11 @@ private fun getAetherTypography(fontFamily: FontFamily) = Typography(
 @Composable
 fun AetherTheme(
     themeMode: AppThemeMode = AppThemeMode.System,
+    forceDark: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val darkTheme = when (themeMode) {
+    // The Gemini-style chat screen is always drawn on pure black, so it forces the dark palette.
+    val darkTheme = forceDark || when (themeMode) {
         AppThemeMode.System -> isSystemInDarkTheme()
         AppThemeMode.Light -> false
         AppThemeMode.Dark -> true
@@ -169,6 +171,20 @@ fun AetherTheme(
     val accessibility = rememberPlatformAccessibilityPreferences()
     SideEffect {
         updateAetherPalette(darkTheme, accessibility.increasedContrast)
+    }
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            var context = view.context
+            while (context is android.content.ContextWrapper && context !is android.app.Activity) {
+                context = context.baseContext
+            }
+            val window = (context as? android.app.Activity)?.window ?: return@SideEffect
+            androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
     }
     val typography = remember {
         getAetherTypography(FontFamily.SansSerif)

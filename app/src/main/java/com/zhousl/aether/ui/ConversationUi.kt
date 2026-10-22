@@ -1,5 +1,23 @@
 package com.zhousl.aether.ui
 
+import com.zhousl.aether.ui.glass.BottomBlueGlow
+import com.zhousl.aether.ui.glass.GeminiColors
+import com.zhousl.aether.ui.glass.GeminiSparkle
+import com.zhousl.aether.ui.glass.GeminiSymbols
+import com.zhousl.aether.ui.glass.InputStars
+import com.zhousl.aether.ui.glass.LocalGeminiBackdrop
+import com.zhousl.aether.ui.glass.ThinkingGlow
+import com.zhousl.aether.ui.glass.geminiGlass
+import com.zhousl.aether.ui.glass.nowSeconds
+import com.kyant.backdrop.backdrops.layerBackdrop
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -441,6 +459,16 @@ fun ConversationScreen(
     var composerBodyHeightPx by remember { mutableIntStateOf(0) }
     var pendingGenerationHeightPx by remember { mutableIntStateOf(0) }
     var composerFocused by remember { mutableStateOf(false) }
+    // Gemini chrome: thinking palette rotates A -> B -> C each finished turn; stars twinkle after typing.
+    var glowTurn by rememberSaveable { mutableIntStateOf(0) }
+    var wasSending by remember { mutableStateOf(isSending) }
+    LaunchedEffect(isSending) {
+        if (wasSending && !isSending) glowTurn++
+        wasSending = isSending
+    }
+    val lastTypedSeconds = remember { mutableFloatStateOf(-100f) }
+    LaunchedEffect(inputValue) { if (inputValue.isNotEmpty()) lastTypedSeconds.floatValue = nowSeconds() }
+    val geminiBackdrop = rememberLayerBackdrop()
     val density = LocalDensity.current
     val fallbackTopBarBodyHeight = with(density) {
         WindowInsets.statusBars.getTop(this).toDp() + 68.dp
@@ -591,20 +619,48 @@ fun ConversationScreen(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = AetherBackground,
+        containerColor = Color.Black,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { innerPadding ->
+        CompositionLocalProvider(LocalGeminiBackdrop provides geminiBackdrop) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(AetherBackgroundGradientTop, AetherBackground, AetherSurface)
-                    )
-                )
+                .background(Color.Black)
                 .padding(innerPadding)
         ) {
+            // Everything the liquid glass refracts lives in this layer: the breathing blue glow and the thinking glow.
+            Box(Modifier.fillMaxSize().layerBackdrop(geminiBackdrop)) {
+                BottomBlueGlow(Modifier.fillMaxSize())
+                ThinkingGlow(active = isSending, turn = glowTurn, modifier = Modifier.fillMaxSize())
+            }
+            InputStars(
+                visible = composerFocused,
+                lastTypedSeconds = lastTypedSeconds,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = composerBodyHeight + animatedImeBottom + 12.dp)
+                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                    .fillMaxWidth()
+                    .height(200.dp),
+            )
             if (messages.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 32.dp)
+                        .offset(y = 30.dp - animatedImeBottom / 2),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    GeminiSparkle(30.dp)
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(R.string.chat_welcome_help),
+                        color = GeminiColors.TextMain,
+                        fontSize = 26.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
                 AetherExtensionSlot(
                     slot = AetherExtensionSlotChatEmpty,
                     modifier = Modifier
@@ -622,6 +678,21 @@ fun ConversationScreen(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
+                        // Content fades out as it scrolls under the top bar (Gemini).
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            val fadeEnd = topBarBodyHeight.toPx() + 8.dp.toPx()
+                            drawRect(
+                                Brush.verticalGradient(
+                                    0f to Color.Transparent,
+                                    1f to Color.Black,
+                                    startY = fadeEnd - 36.dp.toPx(),
+                                    endY = fadeEnd,
+                                ),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        }
                         .nestedScroll(conversationScrollConnection),
                     contentPadding = PaddingValues(
                         start = 20.dp,
@@ -861,6 +932,7 @@ fun ConversationScreen(
                 )
             }
         }
+        }
     }
 }
 
@@ -895,7 +967,6 @@ private fun ConversationTopOverlay(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(topOverlayBodyGradient())
                 .onSizeChanged { onBodyHeightChanged(it.height) },
         ) {
             Column {
@@ -918,12 +989,6 @@ private fun ConversationTopOverlay(
                 )
             }
         }
-        Spacer(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(ConversationTopFadeHeight)
-                .background(topOverlayTailGradient())
-        )
     }
 }
 
@@ -942,15 +1007,22 @@ private fun ConversationTopBar(
     onReasoningEffortSelected: (String) -> Unit,
     onNewChat: () -> Unit,
 ) {
-    AetherConversationTopBarFrame(
+    // Gemini top bar: 72dp tall, 48dp liquid-glass buttons, 16dp side padding.
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .statusBarsPadding(),
-        menuDescription = stringResource(R.string.common_menu),
-        newChatDescription = stringResource(R.string.common_new_chat),
-        onMenu = onMenu,
-        onNewChat = onNewChat,
+            .statusBarsPadding()
+            .height(72.dp)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        GeminiGlassIconButton(
+            icon = GeminiSymbols.Menu,
+            contentDescription = stringResource(R.string.common_menu),
+            onClick = onMenu,
+        )
+        Spacer(Modifier.width(4.dp))
+        Box(Modifier.weight(1f)) {
         ConversationModelSelector(
             options = modelOptions,
             modelCatalogInfo = modelCatalogInfo,
@@ -963,6 +1035,34 @@ private fun ConversationTopBar(
             onReasoningEffortSelected = onReasoningEffortSelected,
             modifier = Modifier.fillMaxWidth(),
         )
+        }
+        LocalShowcaseControls.current?.let { ShowcasePlaybackButton(it) }
+        Spacer(Modifier.width(8.dp))
+        GeminiGlassIconButton(
+            icon = GeminiSymbols.EditNote,
+            contentDescription = stringResource(R.string.common_new_chat),
+            onClick = onNewChat,
+        )
+    }
+}
+
+/** 48dp liquid-glass circle with a 28dp Material Symbols Rounded icon (Gemini top bar). */
+@Composable
+internal fun GeminiGlassIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .geminiGlass(CircleShape)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription, tint = GeminiColors.TextMain, modifier = Modifier.size(28.dp))
     }
 }
 
@@ -1021,23 +1121,17 @@ private fun ConversationModelSelector(
         contentAlignment = Alignment.CenterStart,
     ) {
         Box(
-            modifier = Modifier.height(38.dp)
+            modifier = Modifier.height(48.dp)
                 .onGloballyPositioned { coordinates ->
                     val bounds = coordinates.boundsInWindow()
                     anchorHeightPx = bounds.height.toInt()
                 },
         ) {
-            Box(
-                modifier = Modifier.matchParentSize()
-                    .offset(y = 4.dp)
-                    .blur(14.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(ChatGptControlShadow),
-            )
             Row(
-                modifier = Modifier.height(38.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(AetherSurface.copy(alpha = 0.96f))
+                modifier = Modifier.height(48.dp)
+                    .widthIn(min = 126.dp)
+                    .geminiGlass(RoundedCornerShape(24.dp))
+                    .clip(RoundedCornerShape(24.dp))
                     .clickable(enabled = options.isNotEmpty()) {
                         onOpened()
                         menuSelectedModelKey = selectedModelKey
@@ -1050,21 +1144,27 @@ private fun ConversationModelSelector(
                     SelectedModelDisplay(
                         displayName = selectedDisplay,
                         modifier = Modifier
-                            .widthIn(max = 240.dp)
-                            .padding(horizontal = 17.dp),
+                            .widthIn(max = 200.dp)
+                            .padding(start = 14.dp),
                     )
                 } else {
                     Text(
                         text = fallbackLabel,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Normal),
-                        color = AetherOnSurface,
+                        fontSize = 16.sp,
+                        color = GeminiColors.TextMain,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
-                            .widthIn(max = 220.dp)
-                            .padding(horizontal = 17.dp),
+                            .widthIn(max = 200.dp)
+                            .padding(start = 14.dp),
                     )
                 }
+                Icon(
+                    imageVector = GeminiSymbols.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = GeminiColors.TextDim,
+                    modifier = Modifier.padding(start = 2.dp, end = 10.dp).size(18.dp),
+                )
             }
         }
 
@@ -1405,16 +1505,16 @@ private fun SelectedModelDisplay(
     ) {
         Text(
             text = displayName.primary,
-            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Normal),
-            color = AetherOnSurface,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Normal, fontSize = 16.sp),
+            color = GeminiColors.TextMain,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         if (displayName.secondary.isNotBlank()) {
             Text(
                 text = displayName.secondary,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Normal),
-                color = AetherOnSurfaceVariant,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Normal, fontSize = 16.sp),
+                color = GeminiColors.TextDim,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
@@ -2553,8 +2653,10 @@ private fun ConversationComposerBar(
         isMultilineComposer -> 12.dp
         else -> 8.dp
     }
-    LaunchedEffect(plusSeparated) {
-        onFocusChanged(plusSeparated)
+    // Drives the Gemini star grid: only while the field is focused AND the keyboard is up.
+    val keyboardFocused = textFieldFocused && imeVisible
+    LaunchedEffect(keyboardFocused) {
+        onFocusChanged(keyboardFocused)
     }
     fun runAfterAttachmentMenuDismiss(action: () -> Unit) {
         attachmentMenuExpanded = false
@@ -2680,17 +2782,6 @@ private fun ConversationComposerBar(
                     .fillMaxWidth()
                     .padding(start = fieldStartPadding)
             ) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .offset(y = 8.dp)
-                        .blur(
-                            radius = 22.dp,
-                            edgeTreatment = BlurredEdgeTreatment.Unbounded,
-                        )
-                        .clip(fieldShape)
-                        .background(ChatGptComposerShadow),
-                )
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2698,8 +2789,9 @@ private fun ConversationComposerBar(
                         .animateContentSize(
                             animationSpec = tween(durationMillis = 320, easing = ChatGptMotionEasing),
                         )
+                        // Gemini input capsule: liquid glass with a 16dp refraction band and colour dispersion.
+                        .geminiGlass(fieldShape, edge = 16.dp, dispersion = true)
                         .clip(fieldShape)
-                        .background(AetherSurface)
                         .padding(
                             start = fieldContentStartPadding,
                             end = 8.dp,
@@ -2755,7 +2847,7 @@ private fun ConversationComposerBar(
                                 Text(
                                     text = composerPlaceholder,
                                     style = composerTextStyle,
-                                    color = Color(0xFF8C8C8C),
+                                    color = GeminiColors.TextDim,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -2865,7 +2957,7 @@ private fun ConversationComposerBar(
                                                 )
                                                 ComposerPlusMenuRow(
                                                     title = stringResource(R.string.branch_queue_next_turn),
-                                                    icon = Icons.Rounded.ArrowUpward,
+                                                    icon = GeminiSymbols.ArrowUpward,
                                                     iconTint = Color(0xFF2F6DA3),
                                                     iconContainerColor = Color(0xFFEAF2FF),
                                                     onClick = {
@@ -2889,17 +2981,16 @@ private fun ConversationComposerBar(
                 Box(
                     modifier = Modifier
                         .size(48.dp)
-                        .shadow(plusShadowElevation, CircleShape, ambientColor = ChatGptControlShadow, spotColor = ChatGptControlShadow)
+                        .then(if (plusSeparated) Modifier.geminiGlass(CircleShape) else Modifier)
                         .clip(CircleShape)
-                        .background(if (plusSeparated) AetherSurface else Color.Transparent)
                         .clickable(onClick = { attachmentMenuExpanded = !attachmentMenuExpanded }),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Add,
+                        imageVector = GeminiSymbols.Add,
                         contentDescription = stringResource(R.string.chat_add_attachment_or_tool),
-                        tint = AetherOnSurface,
-                        modifier = Modifier.size(27.dp),
+                        tint = GeminiColors.TextMain,
+                        modifier = Modifier.size(28.dp),
                     )
                 }
 
@@ -2947,7 +3038,7 @@ private fun ConversationComposerBar(
                                 ) {
                                     ComposerPlusMenuRow(
                                         title = stringResource(R.string.chat_photos),
-                                        icon = Icons.Rounded.Image,
+                                        icon = GeminiSymbols.Image,
                                         iconTint = Color(0xFF4E8D5A),
                                         iconContainerColor = AetherSurfaceHigh,
                                         onClick = {
@@ -2956,7 +3047,7 @@ private fun ConversationComposerBar(
                                     )
                                     ComposerPlusMenuRow(
                                         title = stringResource(R.string.chat_files),
-                                        icon = Icons.Rounded.AttachFile,
+                                        icon = GeminiSymbols.AttachFile,
                                         iconTint = AetherOnSurface,
                                         iconContainerColor = AetherSurfaceHigh,
                                         onClick = {
@@ -3065,18 +3156,17 @@ private fun ComposerPauseButton(
 ) {
     Box(
         modifier = Modifier
-            .size(38.dp)
+            .size(48.dp)
             .clip(CircleShape)
-            .background(ChatGptPurple)
+            .background(GeminiColors.Grey20)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .offset(x = 0.5.dp)
-                .size(11.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(Color.White)
+        Icon(
+            imageVector = GeminiSymbols.Stop,
+            contentDescription = stringResource(R.string.common_stop),
+            tint = GeminiColors.TextMain,
+            modifier = Modifier.size(24.dp),
         )
     }
 }
@@ -3104,13 +3194,13 @@ private fun ComposerSubmitButton(
 ) {
     val enabled = hasDraft && canSendDraft
     val buttonColor = if (enabled) {
-        ChatGptPurple
+        GeminiColors.SendGrey
     } else {
-        AetherSurfaceHigher
+        GeminiColors.SendGrey.copy(alpha = 0.45f)
     }
     Box(
         modifier = Modifier
-            .size(38.dp)
+            .size(48.dp)
             .clip(CircleShape)
             .background(buttonColor)
             .clickable(
@@ -3120,14 +3210,14 @@ private fun ComposerSubmitButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Rounded.ArrowUpward,
+            imageVector = GeminiSymbols.ArrowUpward,
             contentDescription = if (isSending) {
                 stringResource(R.string.common_send_follow_up)
             } else {
                 stringResource(R.string.common_send)
             },
-            tint = Color.White,
-            modifier = Modifier.size(21.dp),
+            tint = if (enabled) GeminiColors.TextMain else GeminiColors.TextDim,
+            modifier = Modifier.size(24.dp),
         )
     }
 }

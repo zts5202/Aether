@@ -114,7 +114,7 @@ android {
         // Alpine/Termux-style local runtimes install executable ELF files into app-private
         // storage. Android blocks execve() from that location for targetSdk >= 29.
         targetSdk = 28
-        versionCode = 11
+        versionCode = 12
         versionName = appVersionName
 
         ndk {
@@ -262,6 +262,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.kyant.backdrop)
     implementation(libs.google.material)
     implementation(libs.squareup.okhttp)
     implementation(libs.jsoup)
@@ -280,6 +281,8 @@ dependencies {
     testImplementation(libs.squareup.okhttp.mockwebserver)
     testImplementation(libs.json)
     testImplementation("org.robolectric:robolectric:4.16.1")
+    // Compose UI test runner for the Robolectric chat-screen smoke test (test-only; matches resolved Compose UI 1.11.2).
+    testImplementation("androidx.compose.ui:ui-test-junit4:1.11.2")
     androidTestImplementation(libs.junit4)
     androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.sqlite.bundled)

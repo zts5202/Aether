@@ -315,6 +315,7 @@ fun AetherApp(
     ) {
         AetherTheme(
             themeMode = uiState.settings.themeMode,
+            forceDark = uiState.currentScreen == AppScreen.Chat,
         ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),

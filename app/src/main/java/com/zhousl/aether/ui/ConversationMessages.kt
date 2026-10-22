@@ -1,5 +1,10 @@
 package com.zhousl.aether.ui
 
+import com.zhousl.aether.ui.glass.GeminiColors
+import com.zhousl.aether.ui.glass.GeminiSymbols
+import com.zhousl.aether.ui.glass.geminiGlass
+import androidx.compose.ui.unit.sp
+
 import android.content.Context
 import com.zhousl.aether.AetherApplication
 import android.graphics.BitmapFactory
@@ -644,7 +649,7 @@ private fun UserMessageActionDialog(
                     Spacer(modifier = Modifier.height(4.dp))
                 }
                 UserMessageActionRow(
-                    icon = Icons.Rounded.ContentCopy,
+                    icon = GeminiSymbols.ContentCopy,
                     label = stringResource(R.string.common_copy),
                     onClick = onCopy,
                 )
@@ -659,7 +664,7 @@ private fun UserMessageActionDialog(
                     onClick = onEdit,
                 )
                 UserMessageActionRow(
-                    icon = Icons.Rounded.Refresh,
+                    icon = GeminiSymbols.Refresh,
                     label = stringResource(R.string.common_retry),
                     onClick = onRetry,
                 )
@@ -681,7 +686,7 @@ private fun UserMessageBranchSwitcher(
     ) {
         BranchStepButton(
             enabled = navigation.canGoPrevious,
-            icon = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+            icon = GeminiSymbols.ChevronLeft,
             onClick = onPrevious,
         )
         Text(
@@ -691,7 +696,7 @@ private fun UserMessageBranchSwitcher(
         )
         BranchStepButton(
             enabled = navigation.canGoNext,
-            icon = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            icon = GeminiSymbols.ChevronRight,
             onClick = onNext,
         )
     }
@@ -807,22 +812,22 @@ private fun UserTextBubble(
     maxWidth: Dp,
     onLongPress: () -> Unit,
 ) {
+    // Gemini user bubble: liquid glass, 24dp corners, 12dp refraction band, 24/18dp padding, 16sp/22sp text.
     Box(
         modifier = Modifier
             .widthIn(max = maxWidth)
-            .shadow(10.dp, RoundedCornerShape(24.dp), ambientColor = AetherScrim, spotColor = AetherScrim)
+            .geminiGlass(RoundedCornerShape(24.dp), edge = 12.dp)
             .clip(RoundedCornerShape(24.dp))
-            .background(AetherMessageBubble)
             .combinedClickable(
                 onClick = {},
                 onLongClick = onLongPress,
             )
-            .padding(horizontal = 18.dp, vertical = 14.dp)
+            .padding(horizontal = 24.dp, vertical = 18.dp)
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.bodyLarge,
-            color = AetherOnPrimaryContainer,
+            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+            color = GeminiColors.TextMain,
         )
     }
 }
@@ -3137,17 +3142,19 @@ private fun AssistantMessageAction(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    // Gemini reply action row: 20dp outlined symbols in 44dp round touch targets, dim grey.
     Box(
         modifier = Modifier
-            .size(24.dp)
+            .size(44.dp)
+            .clip(CircleShape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (enabled) AetherOnSurfaceVariant else AetherOnSurfaceVariant.copy(alpha = 0.36f),
-            modifier = Modifier.size(14.dp),
+            tint = if (enabled) GeminiColors.TextDim else GeminiColors.TextDim.copy(alpha = 0.36f),
+            modifier = Modifier.size(20.dp),
         )
     }
 }
@@ -3187,26 +3194,29 @@ private fun AssistantMessageActions(
         label = "statistics_popup_scale",
     )
     Box {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.offset(x = (-12).dp),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
             AssistantMessageAction(
-                icon = LucideIcons.Copy,
+                icon = GeminiSymbols.ContentCopy,
                 contentDescription = stringResource(R.string.common_copy_reply),
                 onClick = onCopy,
             )
             AssistantMessageAction(
-                icon = LucideIcons.RotateCcw,
+                icon = GeminiSymbols.Refresh,
                 contentDescription = stringResource(R.string.common_redo_reply),
                 enabled = actionsEnabled,
                 onClick = onRedo,
             )
             AssistantMessageAction(
-                icon = LucideIcons.Trash2,
+                icon = GeminiSymbols.Delete,
                 contentDescription = stringResource(R.string.common_delete_reply),
                 enabled = actionsEnabled,
                 onClick = onDelete,
             )
             AssistantMessageAction(
-                icon = LucideIcons.ChartNoAxesColumn,
+                icon = GeminiSymbols.BarChart,
                 contentDescription = stringResource(R.string.statistics_title),
                 onClick = {
                     keepStatisticsPopup = true
