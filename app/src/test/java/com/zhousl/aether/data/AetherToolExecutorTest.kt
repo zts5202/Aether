@@ -25,6 +25,8 @@ class AetherToolExecutorTest {
         val properties = definition.getJSONObject("parameters").getJSONObject("properties")
         assertTrue(properties.getJSONObject("eid").getString("description").contains("stable element id"))
         assertTrue(properties.getJSONObject("node_id").getString("description").contains("Deprecated alias"))
+        assertTrue(properties.getJSONObject("cell").getString("description").contains("r3c5"))
+        assertTrue(properties.getJSONObject("grid_id").getString("description").contains("3,5"))
         assertTrue(properties.getJSONObject("x").getString("description").contains("Rejected for real-screen"))
         assertFalse(properties.getJSONObject("x").getString("description").contains("pixel / image_"))
         assertTrue(definition.getString("description").contains("element_tree_first"))

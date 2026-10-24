@@ -396,9 +396,14 @@ class PhoneUseAccessibilityService : AccessibilityService() {
                 put("snapshot_id", snapshotId)
                 put("node_count", count)
                 put("truncated", truncated)
-                put("stdout", if (count == 0) {
-                    "没有可读的无障碍节点。文字仍调用 text：宿主先走无障碍 commitText，再 ACTION_SET_TEXT，剪贴板长按粘贴只是显式回退，不是微信或空树的默认路径。不要提交 0..1000 坐标。不要把未校验的 fill_text 当成成功，不要逐键打拼音，不要换输入法，不要请用户打字或发送，也不要在气泡确认前声称已发送。"
-                } else "Phone Use element tree. Use eid for tap, click, long_click, scroll, and text. node_id is a deprecated alias of the same eid. Do not send normalized 0..1000 click coordinates.")
+                put("stdout", when {
+                    count == 0 && realScreen ->
+                        "没有可读的无障碍节点，也没有可用 eid。真机观察会附带 8×12 网格截图。点击或长按请传 cell（如 r3c5）、grid_id 或 row,col。禁止像素和 0..1000 坐标。文字仍调用 text：宿主先走无障碍 commitText，再 ACTION_SET_TEXT，剪贴板长按粘贴只是显式回退，不是微信或空树的默认路径。不要把未校验的 fill_text 当成成功，不要逐键打拼音，不要换输入法，不要请用户打字或发送，也不要在气泡确认前声称已发送。"
+                    count == 0 ->
+                        "没有可读的无障碍节点。文字仍调用 text：宿主先走无障碍 commitText，再 ACTION_SET_TEXT，剪贴板长按粘贴只是显式回退，不是微信或空树的默认路径。不要提交 0..1000 坐标。不要把未校验的 fill_text 当成成功，不要逐键打拼音，不要换输入法，不要请用户打字或发送，也不要在气泡确认前声称已发送。"
+                    else ->
+                        "Phone Use element tree. Use eid for tap, click, long_click, scroll, and text. node_id is a deprecated alias of the same eid. Do not send normalized 0..1000 click coordinates."
+                })
             }
             return ObservationSnapshot(json, snapshotNodes, windowIds)
         } catch (cause: Throwable) {
@@ -1137,15 +1142,26 @@ class PhoneUseAccessibilityService : AccessibilityService() {
         return if (overlay != null) overlay.withoutVisuals(capture) else capture()
     }
 
-    suspend fun screenshot(displayId: Int, output: File, maxEdge: Int, quality: Int) {
+    suspend fun screenshot(
+        displayId: Int,
+        output: File,
+        maxEdge: Int,
+        quality: Int,
+        drawGrid: Boolean = false,
+    ) {
         val bitmap = captureDisplayBitmap(displayId)
         try {
             withContext(Dispatchers.IO) {
                 val scale = (maxEdge.toFloat() / maxOf(bitmap.width, bitmap.height)).coerceAtMost(1f)
                 val scaled = if (scale < 1f) Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1), (bitmap.height * scale).toInt().coerceAtLeast(1), true) else bitmap
+                val framed = if (drawGrid && displayId == Display.DEFAULT_DISPLAY) {
+                    drawPhoneUseGrid(scaled).also { drawn ->
+                        if (drawn !== scaled && scaled !== bitmap) scaled.recycle()
+                    }
+                } else scaled
                 try {
-                    output.outputStream().use { check(scaled.compress(Bitmap.CompressFormat.JPEG, quality, it)) { "Screenshot encoding failed." } }
-                } finally { if (scaled !== bitmap) scaled.recycle() }
+                    output.outputStream().use { check(framed.compress(Bitmap.CompressFormat.JPEG, quality, it)) { "Screenshot encoding failed." } }
+                } finally { if (framed !== bitmap) framed.recycle() }
             }
         } finally { bitmap.recycle() }
     }

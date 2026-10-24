@@ -1,5 +1,10 @@
 package com.zhousl.aether.data
 
+import com.zhousl.aether.phoneuse.PhoneUseGridCell
+import com.zhousl.aether.phoneuse.phoneUseGridCellFromArguments
+import org.json.JSONArray
+import org.json.JSONObject
+
 /** Prevents repeated permission prompts while still allowing an explicit Phone Use action to retry. */
 internal class PhoneUsePermissionRequestPolicy {
     private var requested = false
@@ -32,24 +37,96 @@ internal fun phoneUseTargetElementId(arguments: org.json.JSONObject): String {
     return arguments.optString("node_id").trim()
 }
 
+internal enum class PhoneUseRealScreenObservation {
+    ElementTree,
+    GridScreenshot,
+}
+
+internal sealed interface PhoneUseRealScreenTarget {
+    data class Element(val eid: String) : PhoneUseRealScreenTarget
+    data class GridCell(val cell: PhoneUseGridCell) : PhoneUseRealScreenTarget
+}
+
+/** A node the model can target. Generic accessibility-focus actions do not count. */
+internal fun phoneUseObservationHasUsableEid(observation: JSONObject): Boolean {
+    if (observation.optInt("node_count", -1) == 0) return false
+    val windows = observation.optJSONArray("windows") ?: return false
+    for (index in 0 until windows.length()) {
+        if (phoneUseNodeHasUsableEid(windows.optJSONObject(index)?.optJSONObject("root"), depth = 0)) return true
+    }
+    return false
+}
+
+internal fun phoneUseExplicitGridRequested(action: String, arguments: JSONObject): Boolean {
+    if (action == "screenshot") return true
+    if (arguments.optBoolean("grid", false)) return true
+    val mode = arguments.optString("observe_mode").trim().lowercase()
+    if (mode == "grid" || mode == "grid_screenshot") return true
+    val strategy = arguments.optString("input_strategy").trim().lowercase()
+    return strategy == "grid" || strategy == "grid_screenshot"
+}
+
+/**
+ * Real-screen observation. A usable tree stays on eid. An empty or non-interactive tree,
+ * and an explicit grid observe, use the 8×12 screenshot. `screenshot_first` is still rejected
+ * by [resolvePhoneUseInputStrategy] so a strategy switch cannot skip the tree.
+ */
+internal fun resolvePhoneUseRealScreenObservation(
+    action: String,
+    arguments: JSONObject,
+    treeUsable: Boolean,
+): PhoneUseRealScreenObservation {
+    if (phoneUseExplicitGridRequested(action, arguments) || !treeUsable) {
+        return PhoneUseRealScreenObservation.GridScreenshot
+    }
+    return PhoneUseRealScreenObservation.ElementTree
+}
+
+/** eid wins when the tree named one. Otherwise a grid cell. Pixels and 0..1000 are rejected. */
+internal fun resolvePhoneUseRealScreenPointAction(
+    action: String,
+    arguments: JSONObject,
+): PhoneUseRealScreenTarget {
+    require(action in setOf("tap", "click", "long_click")) {
+        "Grid cells only target tap, click, and long_click."
+    }
+    if (realScreenModelCoordinatesSupplied(arguments)) {
+        throw IllegalArgumentException(
+            "Real-screen $action rejects raw pixels and normalized 0..1000 coordinates. " +
+                "Pass eid, or a grid cell such as r3c5 when the tree has no usable eid.",
+        )
+    }
+    val eid = phoneUseTargetElementId(arguments)
+    if (eid.isNotBlank()) return PhoneUseRealScreenTarget.Element(eid)
+    val cell = phoneUseGridCellFromArguments(arguments)
+        ?: throw IllegalArgumentException(
+            "Real-screen $action requires eid from the element tree. " +
+                "If the tree has no usable eid, pass cell (r3c5), grid_id, or row and col from the 8×12 grid. " +
+                "Do not compute coordinates.",
+        )
+    return PhoneUseRealScreenTarget.GridCell(cell)
+}
+
 internal fun resolvePhoneUseInputStrategy(
     settings: AppSettings,
     action: String,
     override: String,
 ): PhoneUseInputStrategy {
     if (phoneUseTargetsRealScreen(settings)) {
-        if (override.isNotBlank() &&
-            override != PhoneUseInputStrategy.ElementTreeFirst.storageValue &&
-            override != PhoneUseInputStrategy.ScreenshotFirst.storageValue
-        ) {
-            throw IllegalArgumentException("Invalid input_strategy.")
-        }
-        if (action == "screenshot" || override == PhoneUseInputStrategy.ScreenshotFirst.storageValue) {
+        if (override == PhoneUseInputStrategy.ScreenshotFirst.storageValue) {
             throw IllegalArgumentException(
                 "Real-screen Phone Use forces element_tree_first. " +
-                    "screenshot_first and strategy switching cannot bypass the element tree.",
+                    "screenshot_first and strategy switching cannot bypass the element tree. " +
+                    "An empty tree uses the host 8×12 grid; pass a cell id, not coordinates.",
             )
         }
+        val allowed = setOf(
+            "",
+            PhoneUseInputStrategy.ElementTreeFirst.storageValue,
+            "grid",
+            "grid_screenshot",
+        )
+        if (override !in allowed) throw IllegalArgumentException("Invalid input_strategy.")
         return PhoneUseInputStrategy.ElementTreeFirst
     }
     val explicit = when (action) {
@@ -87,8 +164,8 @@ internal fun phoneUseUsesElementAction(
         }
         if (action in setOf("tap", "click", "long_click", "text") && hasCoordinates) {
             throw IllegalArgumentException(
-                "Real-screen $action rejects normalized 0..1000 coordinates. " +
-                    "Pass eid from the element tree.",
+                "Real-screen $action rejects raw pixels and normalized 0..1000 coordinates. " +
+                    "Pass eid from the element tree, or a grid cell such as r3c5 when that tree has no usable eid.",
             )
         }
         return action != "swipe"
@@ -141,4 +218,20 @@ internal fun phoneUseDisplayOrientationRequested(
     require(value is String) { "orientation must be device, portrait, or landscape." }
     return AgentModeDisplayOrientation.entries.firstOrNull { it.storageValue == value.trim().lowercase() }
         ?: throw IllegalArgumentException("orientation must be device, portrait, or landscape.")
+}
+
+private fun phoneUseNodeHasUsableEid(node: JSONObject?, depth: Int): Boolean {
+    if (node == null || depth > 48) return false
+    val id = node.optString("eid").ifBlank { node.optString("node_id") }
+    val interactive = node.optBoolean("clickable") ||
+        node.optBoolean("long_clickable") ||
+        node.optBoolean("editable") ||
+        node.optBoolean("scrollable") ||
+        node.optBoolean("checkable")
+    if (id.isNotBlank() && node.optBoolean("visible") && node.optBoolean("enabled") && interactive) return true
+    val children = node.optJSONArray("children") ?: JSONArray()
+    for (index in 0 until children.length()) {
+        if (phoneUseNodeHasUsableEid(children.optJSONObject(index), depth + 1)) return true
+    }
+    return false
 }
