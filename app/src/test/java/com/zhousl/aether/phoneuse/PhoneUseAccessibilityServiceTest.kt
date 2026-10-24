@@ -192,11 +192,29 @@ class PhoneUseAccessibilityServiceTest {
         assertEquals("", action.second.getCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE))
     }
 
-    @Test fun aNewObservationInvalidatesOldElementIds() {
-        window(0, 10, "Search")
-        val oldId = root().getString("node_id")
-        root()
-        rejects { service.nodeAction(0, oldId, "tap", "", "forward") }
+    @Test fun stableEidIsReusedAcrossObservationsAndActions() {
+        val node = window(0, 10, "Search")
+        val first = root()
+        val eid = first.getString("eid")
+        assertEquals(eid, first.getString("node_id"))
+        assertTrue(eid.startsWith("e"))
+        assertFalse(eid.contains(":"))
+        assertEquals("forbidden", service.observe(0, 720, 1280).getString("model_click_coordinates"))
+        service.nodeAction(0, eid, "tap", "", "forward")
+        val second = root()
+        assertEquals(eid, second.getString("eid"))
+        assertEquals(eid, second.getString("node_id"))
+        service.nodeAction(0, second.getString("eid"), "tap", "", "forward")
+        assertEquals(2, shadowOf(node).performedActions.size)
+    }
+
+    @Test fun editableEidSurvivesLiveTextChanges() {
+        val node = window(0, 10, "old")
+        node.viewIdResourceName = "example:id/field"
+        val eid = root().getString("eid")
+        node.text = "new value"
+        node.contentDescription = "new value"
+        assertEquals(eid, root().getString("eid"))
     }
 
     @Test fun repeatedContentUpdatesDoNotInvalidateAnUnchangedTarget() {
@@ -230,6 +248,9 @@ class PhoneUseAccessibilityServiceTest {
         repeat(10) { contentEvent(10) }
         val second = service.observe(0, 720, 1280)
         assertNotEquals(first.getString("snapshot_id"), second.getString("snapshot_id"))
+        val firstRoot = first.getJSONArray("windows").getJSONObject(0).getJSONObject("root")
+        val secondRoot = second.getJSONArray("windows").getJSONObject(0).getJSONObject("root")
+        assertEquals(firstRoot.getString("eid"), secondRoot.getString("eid"))
         assertEquals(first.getJSONArray("windows").getJSONObject(0).getString("content_hash"),
             second.getJSONArray("windows").getJSONObject(0).getString("content_hash"))
         assertEquals(10, second.getJSONArray("windows").getJSONObject(0).getInt("updates_since_last_observe"))

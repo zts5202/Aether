@@ -3,11 +3,11 @@ package com.zhousl.aether.data
 import kotlin.math.roundToInt
 
 /**
- * Coordinate contract for the `agent_display` tool.
+ * Host-internal coordinate contract.
  *
- * Tap and swipe take coordinates normalized to 0..1000 on each axis, independent of the display
- * resolution and of the (downscaled) screenshot resolution the model sees. Tool results report the
- * resolved point in both spaces so the model can check where a gesture actually landed.
+ * 0..1000 is for host code that already has a pixel target: virtual-display swipes, cursor
+ * reporting, and future grid-cell centers. Real-screen clicks must not be submitted by the
+ * model in this space. [PhoneUsePolicy] rejects those arguments before this converter runs.
  */
 internal const val AgentModeNormalizedCoordinateMax = 1000
 

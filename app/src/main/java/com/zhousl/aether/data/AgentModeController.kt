@@ -17,10 +17,10 @@ import com.zhousl.aether.agentmode.AgentModeServiceHandle
 import com.zhousl.aether.agentmode.AgentModeServiceLauncher
 import com.zhousl.aether.agentmode.IAetherAgentModeService
 import com.zhousl.aether.phoneuse.PhoneUseElementException
+import com.zhousl.aether.phoneuse.PhoneUseElementIdMigration
 import com.zhousl.aether.phoneuse.PhoneUseAccessibilityService
 import com.zhousl.aether.phoneuse.keyboardTapReflection
 import com.zhousl.aether.phoneuse.normalizePhoneUseAction
-import com.zhousl.aether.phoneuse.shouldRecoverTextEntryWithClipboard
 import com.zhousl.aether.phoneuse.shouldRejectKeyboardTap
 import com.zhousl.aether.termux.TermuxBashTool
 import java.io.File
@@ -276,9 +276,12 @@ class AgentModeController(
                     if (requestedInput == PhoneUseInputStrategy.ScreenshotFirst) {
                         captureAfterDelay(settings, workspaceDirectory, termuxWorkspaceDirectory, delayMillis)
                     } else observeAfterDelay(settings, delayMillis)
+                val elementId = phoneUseTargetElementId(arguments)
+                val realScreen = phoneUseTargetsRealScreen(liveSettings)
                 val usesElement = phoneUseUsesElementAction(liveSettings, action,
-                    hasNode = arguments.optString("node_id").isNotBlank(),
-                    hasCoordinates = arguments.has("x") && arguments.has("y"),
+                    hasNode = elementId.isNotBlank(),
+                    hasCoordinates = (arguments.has("x") && arguments.has("y")) ||
+                        (realScreen && realScreenModelCoordinatesSupplied(arguments)),
                     override = arguments.optString("output_strategy").trim())
                 if (requestedOrientation != null) displayOrientationOverride = requestedOrientation
                 when (action) {
@@ -296,31 +299,32 @@ class AgentModeController(
                     }
                     "tap", "click", "long_click", "scroll", "text" -> {
                         val displayId = ensureDisplay(settings)
-                        val nodeId = arguments.optString("node_id").trim()
                         val text = arguments.optString("text")
                         if (action == "text") require(arguments.has("text")) { "Missing required 'text' argument." }
                         val service = PhoneUseAccessibilityService.requireConnected()
-                        val guarded = withContext(Dispatchers.Main) { service.needsVerifiedClipboardPaste(displayId) }
-                        if (action == "text" && guarded) {
-                            verifiedClipboardText(service, displayId, text, arguments, requestsSend(arguments)) { observation(it) }
-                        } else if (guarded && action in setOf("tap", "click", "long_click") &&
-                            rejectsGuardedKeyboardTap(service, displayId, nodeId, arguments, usesElement)) {
-                            keyboardEditRejected(action)
+                        if (action == "text") {
+                            // commitText, then ACTION_SET_TEXT, then clipboard. WeChat and an empty tree
+                            // do not skip ahead to the clipboard.
+                            verifiedTextEntry(
+                                service, displayId, elementId, text, arguments, requestsSend(arguments), realScreen,
+                            ) { observation(it) }
                         } else {
-                            var targetResolution: String? = null
-                            var pasteInstead = false
-                            try {
-                                if (usesElement && nodeId.isNotBlank()) {
+                            val guarded = withContext(Dispatchers.Main) { service.needsVerifiedClipboardPaste(displayId) }
+                            if (guarded && action in setOf("tap", "click", "long_click") &&
+                                rejectsGuardedKeyboardTap(service, displayId, elementId, arguments, usesElement)) {
+                                keyboardEditRejected(action)
+                            } else {
+                                if (realScreen && elementId.isBlank()) {
+                                    error("Real-screen $action requires eid. $PhoneUseElementIdMigration")
+                                }
+                                var targetResolution: String? = null
+                                if (usesElement && elementId.isNotBlank()) {
                                     val rebound = withContext(Dispatchers.Main) {
                                         service.nodeAction(
-                                            displayId, nodeId, action, text, arguments.optString("direction", "forward"),
+                                            displayId, elementId, action, text, arguments.optString("direction", "forward"),
                                         )
                                     }
                                     targetResolution = if (rebound) "rebound_unique_match" else "refreshed_original_node"
-                                } else if (action == "text") {
-                                    withContext(Dispatchers.Main) {
-                                        service.setFocusedText(displayId, text)
-                                    }
                                 } else {
                                     require(action in setOf("tap", "click", "long_click")) { "scroll requires node_id." }
                                     when (val point = resolvePoint(arguments, "x", "y")) {
@@ -335,12 +339,6 @@ class AgentModeController(
                                         }
                                     }
                                 }
-                            } catch (error: Throwable) {
-                                if (action == "text" && shouldRecoverTextEntryWithClipboard(error)) pasteInstead = true else throw error
-                            }
-                            if (pasteInstead) {
-                                verifiedClipboardText(service, displayId, text, arguments, requestsSend(arguments)) { observation(it) }
-                            } else {
                                 JSONObject(observation(350)).apply {
                                     targetResolution?.let { put("target_resolution", it) }
                                 }.toString()
@@ -458,7 +456,9 @@ class AgentModeController(
                     val state = _displayState.value
                     if (state.isActive && state.displayId != null &&
                         (!hasRefreshedAuthorization || authorizationSettings.agentModeAuthorizationEnabled) &&
-                        (liveSettings.phoneUseInputStrategy == PhoneUseInputStrategy.ElementTreeFirst || liveSettings.phoneUseAllowStrategySwitch)) {
+                        (phoneUseTargetsRealScreen(liveSettings) ||
+                            liveSettings.phoneUseInputStrategy == PhoneUseInputStrategy.ElementTreeFirst ||
+                            liveSettings.phoneUseAllowStrategySwitch)) {
                         try {
                             val fresh = PhoneUseAccessibilityService.requireConnected()
                                 .observeAsync(state.displayId, state.width, state.height)
@@ -1517,15 +1517,17 @@ class AgentModeController(
         }
     }
 
-    private suspend fun verifiedClipboardText(
+    private suspend fun verifiedTextEntry(
         service: PhoneUseAccessibilityService,
         displayId: Int,
+        elementId: String,
         text: String,
         arguments: JSONObject,
         sendAfterVerify: Boolean,
+        realScreen: Boolean,
         observe: suspend (Long) -> String,
     ): String {
-        val anchor = optionalTextAnchor(arguments)
+        val anchor = if (realScreen) null else optionalTextAnchor(arguments)
         val state = _displayState.value
         val outcome = withContext(Dispatchers.Main) {
             service.enterVerifiedText(
@@ -1536,6 +1538,7 @@ class AgentModeController(
                 screenWidth = state.width,
                 screenHeight = state.height,
                 sendAfterVerify = sendAfterVerify,
+                elementId = elementId.ifBlank { null },
             )
         }
         val observed = try {

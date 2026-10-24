@@ -799,6 +799,12 @@ class AetherSelfManagementTool(
             .put("output_strategy", settings.phoneUseOutputStrategy.storageValue)
             .put("allow_strategy_switch", settings.phoneUseAllowStrategySwitch)
             .put("virtual_display_enabled", settings.phoneUseVirtualDisplayEnabled)
+            .put("real_screen_tree_first", !settings.phoneUseVirtualDisplayEnabled)
+            .put(
+                "model_click_coordinates",
+                if (settings.phoneUseVirtualDisplayEnabled) "virtual_display_only" else "forbidden",
+            )
+            .put("text_channel", "commit_text")
             .put("show_commentary", settings.phoneUseShowCommentary)
             .put("show_edge_glow", settings.phoneUseShowEdgeGlow)
             .put("display_orientation", settings.agentModeDisplayOrientation.storageValue)

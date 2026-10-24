@@ -16,11 +16,42 @@ internal class PhoneUsePermissionRequestPolicy {
 internal fun phoneUseSelectionAfterMenuClick(selected: Boolean, enabled: Boolean, granted: Boolean): Boolean =
     enabled && (!granted || !selected)
 
+internal fun phoneUseTargetsRealScreen(settings: AppSettings): Boolean =
+    !settings.phoneUseVirtualDisplayEnabled
+
+/** True when the model supplied a normalized coordinate argument. */
+internal fun realScreenModelCoordinatesSupplied(arguments: org.json.JSONObject): Boolean =
+    listOf("x", "y", "x1", "y1", "x2", "y2").any { key ->
+        arguments.has(key) && !arguments.isNull(key)
+    }
+
+/** Prefer eid. node_id remains a deprecated alias when the value is the stable eid from the latest tree. */
+internal fun phoneUseTargetElementId(arguments: org.json.JSONObject): String {
+    val eid = arguments.optString("eid").trim()
+    if (eid.isNotBlank()) return eid
+    return arguments.optString("node_id").trim()
+}
+
 internal fun resolvePhoneUseInputStrategy(
     settings: AppSettings,
     action: String,
     override: String,
 ): PhoneUseInputStrategy {
+    if (phoneUseTargetsRealScreen(settings)) {
+        if (override.isNotBlank() &&
+            override != PhoneUseInputStrategy.ElementTreeFirst.storageValue &&
+            override != PhoneUseInputStrategy.ScreenshotFirst.storageValue
+        ) {
+            throw IllegalArgumentException("Invalid input_strategy.")
+        }
+        if (action == "screenshot" || override == PhoneUseInputStrategy.ScreenshotFirst.storageValue) {
+            throw IllegalArgumentException(
+                "Real-screen Phone Use forces element_tree_first. " +
+                    "screenshot_first and strategy switching cannot bypass the element tree.",
+            )
+        }
+        return PhoneUseInputStrategy.ElementTreeFirst
+    }
     val explicit = when (action) {
         "tree" -> PhoneUseInputStrategy.ElementTreeFirst
         "screenshot" -> PhoneUseInputStrategy.ScreenshotFirst
@@ -44,6 +75,24 @@ internal fun phoneUseUsesElementAction(
     hasCoordinates: Boolean,
     override: String,
 ): Boolean {
+    if (phoneUseTargetsRealScreen(settings)) {
+        if (override.isNotBlank() && PhoneUseOutputStrategy.entries.none { it.storageValue == override }) {
+            throw IllegalArgumentException("Invalid output_strategy.")
+        }
+        if (action != "swipe" && override == PhoneUseOutputStrategy.GestureFirst.storageValue) {
+            throw IllegalArgumentException(
+                "Real-screen Phone Use forces element actions. " +
+                    "gesture_first and strategy switching cannot bypass the element tree.",
+            )
+        }
+        if (action in setOf("tap", "click", "long_click", "text") && hasCoordinates) {
+            throw IllegalArgumentException(
+                "Real-screen $action rejects normalized 0..1000 coordinates. " +
+                    "Pass eid from the element tree.",
+            )
+        }
+        return action != "swipe"
+    }
     val requested = if (override.isBlank()) settings.phoneUseOutputStrategy else {
         PhoneUseOutputStrategy.entries.firstOrNull { it.storageValue == override }
             ?: error("Invalid output_strategy.")

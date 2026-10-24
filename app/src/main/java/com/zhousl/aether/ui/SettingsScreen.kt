@@ -5708,36 +5708,12 @@ private fun PhoneUseSettingsPage(
                 )
             }
             CardDivider()
-            SelectionDropdownField(
-                label = stringResource(R.string.phone_use_input_strategy), supportingText = "",
-                selectedLabel = inputLabels.getValue(settings.phoneUseInputStrategy),
-                options = PhoneUseInputStrategy.entries.map { strategy ->
-                    SelectionOption(strategy.storageValue, inputLabels.getValue(strategy), "",
-                        strategy == settings.phoneUseInputStrategy) {
-                        onOptionsChanged(strategy, settings.phoneUseOutputStrategy, settings.phoneUseAllowStrategySwitch)
-                    }
-                },
+            Text(
+                text = stringResource(R.string.phone_use_real_screen_policy),
+                style = MaterialTheme.typography.bodySmall,
+                color = AetherOnSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
-            CardDivider()
-            SelectionDropdownField(
-                label = stringResource(R.string.phone_use_output_strategy), supportingText = "",
-                selectedLabel = outputLabels.getValue(settings.phoneUseOutputStrategy),
-                options = PhoneUseOutputStrategy.entries.map { strategy ->
-                    SelectionOption(strategy.storageValue, outputLabels.getValue(strategy), "",
-                        strategy == settings.phoneUseOutputStrategy) {
-                        onOptionsChanged(settings.phoneUseInputStrategy, strategy, settings.phoneUseAllowStrategySwitch)
-                    }
-                },
-            )
-            CardDivider()
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                SettingsToggleRow(
-                    verticalAlignment = Alignment.CenterVertically,
-                    title = stringResource(R.string.phone_use_allow_strategy_switch), subtitle = "",
-                    checked = settings.phoneUseAllowStrategySwitch,
-                    onCheckedChange = { onOptionsChanged(settings.phoneUseInputStrategy, settings.phoneUseOutputStrategy, it) },
-                )
-            }
         }
         Spacer(Modifier.height(24.dp))
         Text(
@@ -5778,6 +5754,43 @@ private fun PhoneUseSettingsPage(
                 )
             }
             if (settings.phoneUseVirtualDisplayEnabled) {
+                CardDivider()
+                Text(
+                    text = stringResource(R.string.phone_use_virtual_strategy_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AetherOnSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+                SelectionDropdownField(
+                    label = stringResource(R.string.phone_use_input_strategy), supportingText = "",
+                    selectedLabel = inputLabels.getValue(settings.phoneUseInputStrategy),
+                    options = PhoneUseInputStrategy.entries.map { strategy ->
+                        SelectionOption(strategy.storageValue, inputLabels.getValue(strategy), "",
+                            strategy == settings.phoneUseInputStrategy) {
+                            onOptionsChanged(strategy, settings.phoneUseOutputStrategy, settings.phoneUseAllowStrategySwitch)
+                        }
+                    },
+                )
+                CardDivider()
+                SelectionDropdownField(
+                    label = stringResource(R.string.phone_use_output_strategy), supportingText = "",
+                    selectedLabel = outputLabels.getValue(settings.phoneUseOutputStrategy),
+                    options = PhoneUseOutputStrategy.entries.map { strategy ->
+                        SelectionOption(strategy.storageValue, outputLabels.getValue(strategy), "",
+                            strategy == settings.phoneUseOutputStrategy) {
+                            onOptionsChanged(settings.phoneUseInputStrategy, strategy, settings.phoneUseAllowStrategySwitch)
+                        }
+                    },
+                )
+                CardDivider()
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    SettingsToggleRow(
+                        verticalAlignment = Alignment.CenterVertically,
+                        title = stringResource(R.string.phone_use_allow_strategy_switch), subtitle = "",
+                        checked = settings.phoneUseAllowStrategySwitch,
+                        onCheckedChange = { onOptionsChanged(settings.phoneUseInputStrategy, settings.phoneUseOutputStrategy, it) },
+                    )
+                }
                 CardDivider()
                 val orientationLabels = mapOf(
                     AgentModeDisplayOrientation.Device to stringResource(R.string.settings_agent_mode_orientation_device),

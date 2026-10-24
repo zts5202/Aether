@@ -67,6 +67,12 @@ class PiAgentPromptTest {
         assertTrue(instructions.contains("unless sent is true"))
         assertTrue(instructions.contains("clipboard itself is unavailable"))
         assertFalse(instructions.contains("Suggest switching input methods"))
+        assertTrue(instructions.contains("commitText"))
+        assertTrue(instructions.contains("element_tree_first"))
+        assertTrue(instructions.contains("stable eid"))
+        assertTrue(instructions.contains("0..1000"))
+        assertFalse(instructions.contains("pixel_x / image_width"))
+        assertFalse(instructions.contains("clipboard-only"))
     }
 
     @Test

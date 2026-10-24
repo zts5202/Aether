@@ -19,6 +19,27 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30])
 class PhoneUseTextEntryTest {
+    @Test fun commitTextIsThePrimaryChannelForWeChatAndEmptyTrees() {
+        val weChatEmpty = phoneUseTextEntryPlan(weChat = true, emptyTree = true)
+        val ordinary = phoneUseTextEntryPlan(weChat = false, emptyTree = false)
+        assertEquals(ordinary, weChatEmpty)
+        assertEquals(PhoneUseTextEntryChannel.CommitText, weChatEmpty.first())
+        assertEquals(PhoneUseTextEntryChannel.SetText, weChatEmpty[1])
+        assertEquals(PhoneUseTextEntryChannel.ClipboardPaste, weChatEmpty.last())
+    }
+
+    @Test fun commitTextSucceedsWithoutTouchingTheClipboard() = runTest {
+        val host = FakeHost()
+        host.acceptCommitText = true
+        host.applyCommitText = true
+        val outcome = PhoneUseTextEntry(host).enter("你好")
+        assertTrue(outcome.verified)
+        assertEquals("commit_text", outcome.method)
+        assertEquals(listOf("commit_text"), host.log)
+        assertEquals("", host.clip)
+        assertEquals("你好", host.text)
+    }
+
     @Test fun packagesAndAliases() {
         assertTrue(isWeChatPackage("com.tencent.mm"))
         assertFalse(isWeChatPackage("com.tencent.mm.plugin"))
@@ -143,7 +164,9 @@ class PhoneUseTextEntryTest {
         assertFalse(outcome.reflection.contains("再提示切换"))
         assertFalse(outcome.reflection.contains("切换到可以提交"))
         assertFalse(outcome.reflection.contains("请人手粘贴"))
-        assertTrue(host.log.first() == "clipboard")
+        assertEquals("commit_text", host.log.first())
+        assertTrue(host.log.indexOf("commit_text") < host.log.indexOf("set_text"))
+        assertTrue(host.log.indexOf("set_text") < host.log.indexOf("clipboard"))
         assertTrue(host.log.indexOf("set_text") < host.log.indexOf("paste"))
         assertTrue(host.log.indexOf("tap") < host.log.indexOf("long_press"))
         assertTrue(host.log.indexOf("paste") < host.log.indexOf("long_press"))
@@ -323,6 +346,8 @@ class PhoneUseTextEntryTest {
     private class FakeHost : PhoneUseTextHost {
         var text: String? = "4"
         var clip: String = ""
+        var acceptCommitText = false
+        var applyCommitText = false
         var acceptSetText = false
         var applySetText = false
         var acceptPaste = false
@@ -360,6 +385,12 @@ class PhoneUseTextEntryTest {
             clip = text
         }
         override fun fieldText(): String? = text
+        override fun tryCommitText(text: String): Boolean {
+            log += "commit_text"
+            if (!acceptCommitText) return false
+            if (applyCommitText) this.text = text
+            return true
+        }
         override fun trySetText(text: String): Boolean {
             log += "set_text"
             if (!acceptSetText) return false
