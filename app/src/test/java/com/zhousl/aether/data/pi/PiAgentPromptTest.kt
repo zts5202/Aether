@@ -71,6 +71,10 @@ class PiAgentPromptTest {
         assertTrue(instructions.contains("element_tree_first"))
         assertTrue(instructions.contains("stable eid"))
         assertTrue(instructions.contains("0..1000"))
+        assertTrue(instructions.contains("8×12"))
+        assertTrue(instructions.contains("r3c5"))
+        assertTrue(instructions.contains("tree_usable"))
+        assertTrue(instructions.contains("Do not compute pixels"))
         assertFalse(instructions.contains("pixel_x / image_width"))
         assertFalse(instructions.contains("clipboard-only"))
     }

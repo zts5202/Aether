@@ -1061,8 +1061,8 @@
     <string name="file_manager_view_grid">Grid view</string>
     <string name="file_manager_view_list">List view</string>
     <string name="common_confirm">Confirm</string>
-    <string name="phone_use_accessibility_description">Let the Agent read on-screen elements and perform taps, gestures, and text entry. Screenshots are taken only when requested. Enable this service to use Phone Use.</string>
-    <string name="phone_use_description">Phone Use controls apps on the foreground screen through Android Accessibility. The real screen always reads the element tree first and acts by stable eid. The model cannot submit 0..1000 click coordinates. Text entry uses accessibility commitText first.</string>
+    <string name="phone_use_accessibility_description">Let the Agent read on-screen elements and perform taps, gestures, and text entry. Screenshots are taken when the element tree has no usable target, or when a grid observation is requested. Enable this service to use Phone Use.</string>
+    <string name="phone_use_description">Phone Use controls apps on the foreground screen through Android Accessibility. The real screen reads the element tree first and acts by stable eid. If that tree has no usable eid, the host draws an 8×12 grid and taps a cell itself. The model cannot submit 0..1000 click coordinates. Text entry uses accessibility commitText first.</string>
     <string name="phone_use_foreground">Foreground</string>
     <string name="phone_use_foreground_description">Read and operate on-screen elements through Accessibility. No Root or Shizuku required.</string>
     <string name="phone_use_execution_mode">Execution mode</string>
@@ -1071,7 +1071,7 @@
     <string name="phone_use_accessibility_missing">Enable Aether in system Accessibility settings. If already enabled, switch it off and on to reconnect.</string>
     <string name="phone_use_accessibility_ready">Accessibility is connected. Phone Use controls the foreground screen.</string>
     <string name="phone_use_onboarding_message">Phone Use lets the Agent operate apps on your screen through Android Accessibility. Root and Shizuku are optional, for background Virtual Display only.</string>
-    <string name="phone_use_onboarding_description">Enable Aether in Accessibility settings. On the real screen the Agent uses the element tree and eid, not normalized click coordinates. Screenshot-first and gesture-first apply only to Virtual Display.</string>
+    <string name="phone_use_onboarding_description">Enable Aether in Accessibility settings. On the real screen the Agent uses the element tree and eid, not normalized click coordinates. When the tree has no usable eid, the host shows an 8×12 grid and taps the chosen cell. Screenshot-first and gesture-first apply only to Virtual Display.</string>
     <string name="phone_use_enabled">Enable Phone Use</string>
     <string name="phone_use_input_strategy">Input strategy</string>
     <string name="phone_use_output_strategy">Output strategy</string>
@@ -1080,8 +1080,8 @@
     <string name="phone_use_element_first">Element operations first</string>
     <string name="phone_use_gesture_first">Coordinate gestures first</string>
     <string name="phone_use_allow_strategy_switch">Allow Agent to switch to the alternative strategy</string>
-    <string name="phone_use_real_screen_policy">The real screen stays on the element tree. Tap, click, long press, scroll, and text use a stable eid. The model cannot submit 0..1000 click coordinates. Typing uses accessibility commitText, then set-text, with clipboard paste only as a last resort. Screenshot-first, gesture-first, and strategy switching do not apply here.</string>
-    <string name="phone_use_virtual_strategy_note">These strategy options apply only to Virtual Display. The real screen keeps element-tree actions by eid.</string>
+    <string name="phone_use_real_screen_policy">The real screen stays on the element tree. Tap, click, long press, scroll, and text use a stable eid when one is available. If the tree is empty, the host draws an 8×12 grid and accepts a cell id instead of coordinates. The model cannot submit pixels or 0..1000 click coordinates. Typing uses accessibility commitText, then set-text, with clipboard paste only as a last resort. Screenshot-first, gesture-first, and strategy switching do not apply here.</string>
+    <string name="phone_use_virtual_strategy_note">These strategy options apply only to Virtual Display. The real screen keeps element-tree actions by eid, and uses an 8×12 grid only when that tree has no usable eid.</string>
     <string name="phone_use_visual_feedback">Visual feedback</string>
     <string name="phone_use_show_commentary">Thinking bubble</string>
     <string name="phone_use_show_commentary_description">Show progress and thinking notes on the right</string>

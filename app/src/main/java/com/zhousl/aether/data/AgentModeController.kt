@@ -21,6 +21,10 @@ import com.zhousl.aether.phoneuse.PhoneUseElementIdMigration
 import com.zhousl.aether.phoneuse.PhoneUseAccessibilityService
 import com.zhousl.aether.phoneuse.keyboardTapReflection
 import com.zhousl.aether.phoneuse.normalizePhoneUseAction
+import com.zhousl.aether.phoneuse.phoneUseGridCellCenter
+import com.zhousl.aether.phoneuse.phoneUseGridCellFromArguments
+import com.zhousl.aether.phoneuse.phoneUseGridContract
+import com.zhousl.aether.phoneuse.phoneUseGridStdout
 import com.zhousl.aether.phoneuse.shouldRejectKeyboardTap
 import com.zhousl.aether.termux.TermuxBashTool
 import java.io.File
@@ -272,12 +276,19 @@ class AgentModeController(
                 val returnToAether = phoneUseReturnToAetherRequested(liveSettings, action, arguments)
                 val requestedInput = resolvePhoneUseInputStrategy(liveSettings, action,
                     arguments.optString("input_strategy").trim())
-                suspend fun observation(delayMillis: Long): String =
-                    if (requestedInput == PhoneUseInputStrategy.ScreenshotFirst) {
-                        captureAfterDelay(settings, workspaceDirectory, termuxWorkspaceDirectory, delayMillis)
-                    } else observeAfterDelay(settings, delayMillis)
-                val elementId = phoneUseTargetElementId(arguments)
                 val realScreen = phoneUseTargetsRealScreen(liveSettings)
+                suspend fun observation(delayMillis: Long): String {
+                    if (!realScreen) {
+                        return if (requestedInput == PhoneUseInputStrategy.ScreenshotFirst) {
+                            captureAfterDelay(settings, workspaceDirectory, termuxWorkspaceDirectory, delayMillis)
+                        } else observeAfterDelay(settings, delayMillis)
+                    }
+                    val tree = JSONObject(observeAfterDelay(settings, delayMillis))
+                    return presentRealScreenObservation(
+                        settings, workspaceDirectory, termuxWorkspaceDirectory, tree, action, arguments,
+                    ).toString()
+                }
+                val elementId = phoneUseTargetElementId(arguments)
                 val usesElement = phoneUseUsesElementAction(liveSettings, action,
                     hasNode = elementId.isNotBlank(),
                     hasCoordinates = (arguments.has("x") && arguments.has("y")) ||
@@ -311,14 +322,35 @@ class AgentModeController(
                         } else {
                             val guarded = withContext(Dispatchers.Main) { service.needsVerifiedClipboardPaste(displayId) }
                             if (guarded && action in setOf("tap", "click", "long_click") &&
-                                rejectsGuardedKeyboardTap(service, displayId, elementId, arguments, usesElement)) {
+                                rejectsGuardedKeyboardTap(service, displayId, elementId, arguments, usesElement, realScreen)) {
                                 keyboardEditRejected(action)
                             } else {
-                                if (realScreen && elementId.isBlank()) {
-                                    error("Real-screen $action requires eid. $PhoneUseElementIdMigration")
-                                }
                                 var targetResolution: String? = null
-                                if (usesElement && elementId.isNotBlank()) {
+                                if (realScreen && action in setOf("tap", "click", "long_click")) {
+                                    when (val target = resolvePhoneUseRealScreenPointAction(action, arguments)) {
+                                        is PhoneUseRealScreenTarget.Element -> {
+                                            val rebound = withContext(Dispatchers.Main) {
+                                                service.nodeAction(
+                                                    displayId, target.eid, action, text, arguments.optString("direction", "forward"),
+                                                )
+                                            }
+                                            targetResolution = if (rebound) "rebound_unique_match" else "refreshed_original_node"
+                                        }
+                                        is PhoneUseRealScreenTarget.GridCell -> {
+                                            val state = _displayState.value
+                                            val (x, y) = phoneUseGridCellCenter(target.cell, state.width, state.height)
+                                            withContext(Dispatchers.Main) {
+                                                service.gesture(
+                                                    displayId, x, y, duration = if (action == "long_click") 700 else 80,
+                                                )
+                                            }
+                                            updateCursorPosition(x, y)
+                                            targetResolution = "grid_cell:${target.cell.id}"
+                                        }
+                                    }
+                                } else if (realScreen && elementId.isBlank()) {
+                                    error("Real-screen $action requires eid. $PhoneUseElementIdMigration")
+                                } else if (usesElement && elementId.isNotBlank()) {
                                     val rebound = withContext(Dispatchers.Main) {
                                         service.nodeAction(
                                             displayId, elementId, action, text, arguments.optString("direction", "forward"),
@@ -462,8 +494,17 @@ class AgentModeController(
                         try {
                             val fresh = PhoneUseAccessibilityService.requireConnected()
                                 .observeAsync(state.displayId, state.width, state.height)
-                            result.put("observation", fresh)
-                            result.put("recovery", "use_returned_observation")
+                            val presented = if (phoneUseTargetsRealScreen(liveSettings)) {
+                                presentRealScreenObservation(
+                                    settings, workspaceDirectory, termuxWorkspaceDirectory, fresh, action, arguments,
+                                )
+                            } else fresh
+                            result.put("observation", presented)
+                            result.put(
+                                "recovery",
+                                if (presented.optString("observation_mode") == "grid_screenshot") "use_grid_cell"
+                                else "use_returned_observation",
+                            )
                         } catch (cause: Throwable) {
                             if (cause is CancellationException) throw cause
                         }
@@ -899,17 +940,95 @@ class AgentModeController(
             .observeAsync(displayId, state.width, state.height).toString()
     }
 
+    private suspend fun presentRealScreenObservation(
+        settings: AppSettings,
+        workspaceDirectory: String,
+        termuxWorkspaceDirectory: String,
+        observation: JSONObject,
+        action: String,
+        arguments: JSONObject,
+    ): JSONObject {
+        val usable = phoneUseObservationHasUsableEid(observation)
+        observation.put("tree_usable", usable)
+        val decision = resolvePhoneUseRealScreenObservation(action, arguments, usable)
+        if (decision == PhoneUseRealScreenObservation.ElementTree) {
+            observation.put("observation_mode", "element_tree")
+            observation.put("model_click", "eid")
+            observation.put("model_click_coordinates", "forbidden")
+            return observation
+        }
+        return try {
+            mergeGridScreenshot(
+                settings,
+                workspaceDirectory,
+                termuxWorkspaceDirectory,
+                observation,
+                explicit = phoneUseExplicitGridRequested(action, arguments),
+            )
+        } catch (cause: CancellationException) {
+            throw cause
+        } catch (cause: Throwable) {
+            observation.put("observation_mode", "element_tree")
+            observation.put("grid_error", cause.message ?: cause.javaClass.simpleName)
+            observation.put(
+                "stdout",
+                observation.optString("stdout") + " 8×12 网格截图失败，仍不要提交坐标：" +
+                    (cause.message ?: cause.javaClass.simpleName),
+            )
+            observation
+        }
+    }
+
+    private suspend fun mergeGridScreenshot(
+        settings: AppSettings,
+        workspaceDirectory: String,
+        termuxWorkspaceDirectory: String,
+        observation: JSONObject,
+        explicit: Boolean,
+    ): JSONObject {
+        val shot = JSONObject(
+            captureAfterDelay(
+                settings,
+                workspaceDirectory,
+                termuxWorkspaceDirectory,
+                delayMillis = 0,
+                drawGrid = true,
+            ),
+        )
+        listOf(
+            "screenshot_path",
+            "preview_path",
+            "screenshot_mime_type",
+            "screenshot_base64",
+            "image_width",
+            "image_height",
+        ).forEach { key ->
+            if (shot.has(key)) observation.put(key, shot.get(key))
+        }
+        val usable = observation.optBoolean("tree_usable")
+        observation.put("ok", true)
+        observation.put("observation_mode", "grid_screenshot")
+        observation.put("grid_explicit", explicit)
+        observation.put("grid", phoneUseGridContract())
+        observation.put("model_click", if (usable) "eid" else "grid_cell")
+        observation.put("model_click_coordinates", "forbidden")
+        observation.put("coordinate_space", "grid_cell")
+        observation.put("stdout", phoneUseGridStdout(usable, explicit))
+        return observation
+    }
+
     private suspend fun captureAfterDelay(
         settings: AppSettings,
         workspaceDirectory: String,
         termuxWorkspaceDirectory: String,
         delayMillis: Long,
         extras: JSONObject? = null,
+        drawGrid: Boolean = false,
     ): String {
         if (delayMillis > 0) delay(delayMillis)
         val captureId = "capture-${System.currentTimeMillis()}"
         val previewFile = File(cacheDirectory, "$captureId.$AgentModeCaptureExtension")
-        captureImageFile(settings, previewFile)
+        captureImageFile(settings, previewFile, drawGrid = drawGrid)
         if (!previewFile.isFile || previewFile.length() <= 0L) {
             error("Phone Use screenshot capture produced an empty file.")
         }
@@ -981,6 +1100,7 @@ class AgentModeController(
     private suspend fun captureImageFile(
         settings: AppSettings,
         outputFile: File,
+        drawGrid: Boolean = false,
     ) {
         val displayId = ensureDisplay(settings)
         captureMutex.withLock {
@@ -989,7 +1109,11 @@ class AgentModeController(
             try {
                 withContext(Dispatchers.Main) {
                     PhoneUseAccessibilityService.requireConnected().screenshot(
-                        displayId, outputFile, AgentModeCaptureMaxEdge, AgentModeCaptureJpegQuality,
+                        displayId,
+                        outputFile,
+                        AgentModeCaptureMaxEdge,
+                        if (drawGrid) 92 else AgentModeCaptureJpegQuality,
+                        drawGrid = drawGrid && displayId == Display.DEFAULT_DISPLAY,
                     )
                 }
             } catch (throwable: Throwable) {
@@ -1614,14 +1738,21 @@ class AgentModeController(
         nodeId: String,
         arguments: JSONObject,
         usesElement: Boolean,
+        realScreen: Boolean,
     ): Boolean {
         val keyboard = withContext(Dispatchers.Main) { service.inputMethodBounds(displayId) }
         if (usesElement && nodeId.isNotBlank()) {
             return withContext(Dispatchers.Main) { service.nodeInInputMethod(displayId, nodeId) }
         }
-        if (!arguments.has("x") || !arguments.has("y")) return false
-        val point = resolvePoint(arguments, "x", "y")
-        return point is ResolvedPoint.Valid && shouldRejectKeyboardTap(true, keyboard, point.x, point.y)
+        if (arguments.has("x") && arguments.has("y")) {
+            val point = resolvePoint(arguments, "x", "y")
+            return point is ResolvedPoint.Valid && shouldRejectKeyboardTap(true, keyboard, point.x, point.y)
+        }
+        if (!realScreen) return false
+        val cell = runCatching { phoneUseGridCellFromArguments(arguments) }.getOrNull() ?: return false
+        val state = _displayState.value
+        val (x, y) = phoneUseGridCellCenter(cell, state.width, state.height)
+        return shouldRejectKeyboardTap(true, keyboard, x, y)
     }
 
     private fun keyboardEditRejected(action: String): String {

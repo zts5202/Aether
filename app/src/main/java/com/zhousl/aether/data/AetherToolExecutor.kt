@@ -224,10 +224,12 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
     put(
         "description",
         "Operate Phone Use through Android Accessibility on the foreground screen, or a Virtual Display when configured. " +
-            "On the real screen, observations and actions are element_tree_first. screenshot_first, gesture_first, and strategy switching cannot bypass the tree. " +
-            "Every interactive node has a stable eid. Pass eid for tap, click, long_click, scroll, and text. " +
-            "node_id is a deprecated alias of eid. Do not send normalized 0..1000 coordinates for clicks; the real screen rejects them. " +
-            "Typing uses accessibility InputConnection.commitText first, then ACTION_SET_TEXT. Clipboard paste is an explicit last resort, including for WeChat and an empty tree. " +
+            "On the real screen, observations and actions are element_tree_first. screenshot_first, gesture_first, and strategy switching cannot bypass a usable tree. " +
+            "Every interactive node has a stable eid. Pass eid for tap, click, long_click, scroll, and text when the tree is usable. " +
+            "If the tree is empty or tree_usable is false, the host returns an 8×12 grid screenshot. Pass cell (r3c5), grid_id, or row and col. The host taps the cell center. " +
+            "Do not send raw pixels or normalized 0..1000 coordinates for clicks; the real screen rejects them. " +
+            "node_id is a deprecated alias of eid. " +
+            "Typing uses accessibility InputConnection.commitText first, then ACTION_SET_TEXT. Clipboard paste is an explicit last resort, including for WeChat and an empty tree after a grid tap. " +
             "Unrelated content events do not expire an eid: the target is refreshed and checked at execution. Target errors include a fresh observation when permitted. Use visible, enabled, actionable elements; never guess a replacement by index. " +
             "Virtual Display may still use its configured strategy. " +
             "When finished, stop with return_to_aether=true can bring the user back to Aether (foreground mode only). Omit it to leave the result visible in the controlled app. " +
@@ -240,12 +242,18 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
             put(
                 "properties",
                 JSONObject().apply {
-                    put("action", stringProperty("One of: list_apps, start, observe, tree, status, launch, tap, click, long_click, scroll, swipe, key, text, screenshot, stop. fill_text is an alias of text."))
+                    put("action", stringProperty("One of: list_apps, start, observe, tree, status, launch, tap, click, long_click, scroll, swipe, key, text, screenshot, stop. fill_text is an alias of text. On the real screen, screenshot is an explicit 8×12 grid observe and does not accept coordinates."))
                     put("return_to_aether", booleanProperty("For stop, foreground mode only: optionally return the user to Aether after finishing. Defaults to false; omit to leave the controlled app visible."))
-                    put("input_strategy", stringProperty("Real screen forces element_tree_first. screenshot_first is rejected there and cannot bypass the tree. Virtual Display may pass element_tree_first or screenshot_first when strategy switching is allowed."))
-                    put("output_strategy", stringProperty("Real screen forces element actions by eid. gesture_first is rejected there. Virtual Display may pass element_first or gesture_first when strategy switching is allowed."))
-                    put("eid", stringProperty("A stable element id from the latest tree. Required for real-screen tap, click, long_click, scroll, and text. Reuse it across later observations and actions."))
+                    put("input_strategy", stringProperty("Real screen forces element_tree_first. screenshot_first is rejected there and cannot bypass a usable tree. grid requests the 8×12 fallback. Virtual Display may pass element_tree_first or screenshot_first when strategy switching is allowed."))
+                    put("output_strategy", stringProperty("Real screen forces element actions by eid when the tree is usable, or a grid cell when it is not. gesture_first is rejected there. Virtual Display may pass element_first or gesture_first when strategy switching is allowed."))
+                    put("grid", booleanProperty("Real screen only. Explicitly request the 8×12 grid screenshot. If tree_usable is true, still act by eid."))
+                    put("observe_mode", stringProperty("Real screen only. Pass grid to request the 8×12 grid screenshot."))
+                    put("eid", stringProperty("A stable element id from the latest tree. Required for real-screen tap, click, long_click, scroll, and text when the tree has a usable eid. Reuse it across later observations and actions."))
                     put("node_id", stringProperty("Deprecated alias of eid. Used only when eid is omitted. Snapshot ids of the form {snapshot}:{index} are no longer issued."))
+                    put("cell", stringProperty("Real-screen tap or long_click when the tree has no usable eid. Copy a printed 8×12 label such as r3c5, or pass row,col. The host converts the cell center to a gesture. Do not send pixels or 0..1000 coordinates."))
+                    put("grid_id", stringProperty("Alias of cell. Example: r3c5 or 3,5. Row 0..7, column 0..11."))
+                    put("row", integerProperty("Real-screen grid row, 0..7. Pass with col. Ignored when eid is present."))
+                    put("col", integerProperty("Real-screen grid column, 0..11. Pass with row. Ignored when eid is present."))
                     put("direction", stringProperty("For scroll: forward/backward, down/up, or right/left."))
                     put("query", stringProperty("For list_apps: optional app label, package, or activity filter."))
                     put("include_system", booleanProperty("For list_apps: whether to include system apps."))
@@ -261,9 +269,9 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
                         put(
                             key,
                             integerProperty(
-                                "Rejected for real-screen tap, click, long_click, and text. Do not submit normalized 0..1000 " +
-                                    "$axis coordinates for clicks, and do not convert screenshot pixels into them. " +
-                                    "Virtual Display swipe may still pass host-normalized 0..1000 values.",
+                                "Rejected for real-screen tap, click, long_click, and text. Do not submit raw pixels or normalized 0..1000 " +
+                                    "$axis coordinates for clicks, and do not convert grid labels or screenshot pixels into them. " +
+                                    "Pass eid, or cell when the 8×12 grid is showing. Virtual Display swipe may still pass host-normalized 0..1000 values.",
                             ),
                         )
                     }

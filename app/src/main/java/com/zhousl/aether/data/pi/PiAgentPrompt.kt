@@ -36,13 +36,17 @@ internal fun buildPiAgentInstructions(
             "\n\nPhone Use is enabled for this chat. Use agent_display to operate Android via Accessibility. " +
                 "The current mode is ${if (realScreen) "foreground" else "Virtual Display (background)"}. " +
                 if (realScreen) {
-                    "Real-screen order is fixed: element_tree_first, then act by eid. " +
-                        "screenshot_first, gesture_first, and strategy switching cannot bypass the element tree. " +
-                        "Do not pass input_strategy=screenshot_first, output_strategy=gesture_first, or action=screenshot to skip the tree. " +
+                    "Real-screen order is fixed: element_tree_first, then act by stable eid. " +
+                        "If the returned tree is empty or tree_usable is false, use the host screenshot with the drawn 8×12 grid. " +
+                        "Copy a printed cell id such as r3c5, or pass cell, grid_id, or row and col. Rows are 0..7 and columns are 0..11. " +
+                        "The host converts that cell to a tap or long_click. Do not compute pixels, bounds, or 0..1000 coordinates. " +
+                        "screenshot_first and gesture_first cannot bypass a usable element tree. " +
+                        "Do not pass input_strategy=screenshot_first or output_strategy=gesture_first. " +
+                        "action=screenshot or grid=true is an explicit grid observe. If tree_usable is true, keep using eid even when a grid image is attached. " +
                         "Every interactive node has a stable eid. Reuse that eid across later observations and actions. " +
                         "node_id is a deprecated alias of eid. " +
                         "Never submit x, y, or any normalized 0..1000 coordinate for tap, click, or long_click. The host rejects those arguments. " +
-                        "Do not convert pixels, bounds, or screenshot positions into click coordinates. "
+                        "After a grid tap into a WeChat chat or input, keep calling text. Do not type through grid cells. "
                 } else {
                     "Input strategy: ${settings.phoneUseInputStrategy.storageValue}; output strategy: ${settings.phoneUseOutputStrategy.storageValue}. " +
                         "observe/start and action results follow the input strategy. " +
@@ -50,7 +54,7 @@ internal fun buildPiAgentInstructions(
                         "Virtual Display swipe may use normalized 0..1000 coordinates. Do not use those coordinates to click when an eid is available. "
                 } +
                 "The host revalidates the specific element before acting. Dynamic loading elsewhere does not invalidate an unchanged target. " +
-                "Use visible, enabled, actionable elements. On element errors, action_succeeded=false: inspect the returned observation and choose a valid eid. " +
+                "Use visible, enabled, actionable elements. On element errors, action_succeeded=false: inspect the returned observation and choose a valid eid, or a grid cell when that observation has no usable eid. " +
                 "Never simulate USER/tool_result messages or write fictional tool outputs. Only actual agent_display results establish whether a device action succeeded. " +
                 "Use text (fill_text is the same action) to enter text. Password values are redacted. " +
                 "The primary typing channel is accessibility InputConnection.commitText. ACTION_SET_TEXT is the next fallback. " +

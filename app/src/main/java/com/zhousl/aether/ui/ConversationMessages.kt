@@ -4249,6 +4249,19 @@ private fun StringBuilder.appendAetherKeyValue(
     }
 }
 
+private fun summarizeAgentDisplayPoint(arguments: JSONObject): String {
+    val cell = arguments.optString("cell").trim().ifBlank { arguments.optString("grid_id").trim() }
+    val row = if (arguments.has("row") && !arguments.isNull("row")) arguments.optString("row").trim() else ""
+    val col = if (arguments.has("col") && !arguments.isNull("col")) arguments.optString("col").trim() else ""
+    val eid = arguments.optString("eid").trim().ifBlank { arguments.optString("node_id").trim() }
+    return when {
+        cell.isNotBlank() -> cell
+        row.isNotBlank() && col.isNotBlank() -> "$row,$col"
+        eid.isNotBlank() -> "eid=$eid"
+        else -> "x=${arguments.optString("x").trim()} y=${arguments.optString("y").trim()}"
+    }
+}
+
 private fun summarizeAgentDisplayCommand(arguments: JSONObject?): String {
     if (arguments == null) return "agent_display"
     val action = arguments.optString("action").trim().ifBlank { "unknown" }
@@ -4258,7 +4271,7 @@ private fun summarizeAgentDisplayCommand(arguments: JSONObject?): String {
             "agent_display list_apps${if (query.isBlank()) "" else " $query"}"
         }
         "launch" -> "agent_display launch ${arguments.optString("target").trim()}"
-        "tap" -> "agent_display tap x=${arguments.optString("x").trim()} y=${arguments.optString("y").trim()}"
+        "tap", "click", "long_click" -> "agent_display $action ${summarizeAgentDisplayPoint(arguments)}"
         "swipe" -> "agent_display swipe ${arguments.optString("x1").trim()},${arguments.optString("y1").trim()} -> ${arguments.optString("x2").trim()},${arguments.optString("y2").trim()} ${arguments.optString("duration_ms").ifBlank { arguments.optString("durationMs") }.trim()}ms"
         "key" -> "agent_display key ${arguments.optString("key").trim()}"
         "text" -> {
