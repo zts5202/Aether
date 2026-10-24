@@ -248,7 +248,7 @@ internal fun textEntryReflection(
         if (clipboardUnavailable) {
             append("剪贴板不可用，所以无法粘贴。只有剪贴板本身不可用时，才可以提示检查输入法是否拦截了剪贴板。不要请用户手动打字或发送。")
         } else {
-            appendLine("请继续只调用 text，把完整目标文字交给剪贴板粘贴。清空请发送空文字。")
+            appendLine("请继续只调用 text。宿主会先 commitText，再 ACTION_SET_TEXT，最后才剪贴板粘贴。清空请发送空文字。")
             appendLine("不要点软键盘退格，也不要请用户手动粘贴。")
             appendLine("不要逐键打拼音，不要点输入法按键，也不要请用户手动打字或发送。")
             append("不要换输入法。未校验到目标文字不得当作已输入或已发送。")
@@ -269,10 +269,32 @@ internal fun sendNotVerifiedReflection(text: String, attempts: List<String>): St
 
 internal fun keyboardTapReflection(): String = """
 软键盘上的点击不能当作删除或输入。微信或空树里点退格、逐键拼音都写不进输入框。
-请改用 text：写入完整目标文字，会先放入剪贴板，再粘贴覆盖；清空则发送空文字。
+请改用 text：宿主先走无障碍 commitText，再 ACTION_SET_TEXT，剪贴板长按粘贴只是最后回退。清空则发送空文字。
 不要点软键盘退格，也不要请用户手动粘贴。
 不要逐键打拼音，也不要请用户手动打字或发送。
 """.trim()
+
+/** commitText, then ACTION_SET_TEXT, then clipboard. WeChat and empty trees use the same order. */
+internal enum class PhoneUseTextEntryChannel {
+    CommitText,
+    SetText,
+    ClipboardPaste,
+}
+
+internal fun phoneUseTextEntryPlan(weChat: Boolean, emptyTree: Boolean): List<PhoneUseTextEntryChannel> {
+    val scene = when {
+        weChat && emptyTree -> "wechat-empty"
+        weChat -> "wechat"
+        emptyTree -> "empty"
+        else -> "field"
+    }
+    check(scene.isNotEmpty())
+    return listOf(
+        PhoneUseTextEntryChannel.CommitText,
+        PhoneUseTextEntryChannel.SetText,
+        PhoneUseTextEntryChannel.ClipboardPaste,
+    )
+}
 
 internal data class TextEntryOutcome(
     val verified: Boolean,
@@ -295,6 +317,8 @@ internal interface PhoneUseTextHost {
     fun writeClipboard(text: String)
     /** Null when no field is exposed. Empty when the field is exposed but blank. */
     fun fieldText(): String?
+    /** Accessibility InputConnection.commitText. False when that channel is unavailable. */
+    fun tryCommitText(text: String): Boolean = false
     fun trySetText(text: String): Boolean
     fun trySelectAll(): Boolean
     fun tryPaste(): Boolean
@@ -329,13 +353,6 @@ internal class PhoneUseTextEntry(
     suspend fun enter(text: String, sendAfterVerify: Boolean = false): TextEntryOutcome {
         lastRequestedText = text
         val attempts = mutableListOf<String>()
-        if (text.isNotEmpty()) {
-            val wrote = runCatching { host.writeClipboard(text) }.isSuccess
-            if (!wrote) {
-                attempts += "写入剪贴板失败"
-                return failure(attempts, clipboardUnavailable = true)
-            }
-        }
         val before = host.fieldText()
         val filled = if (text.isEmpty()) {
             clearByNodes(before, attempts)?.let { success(it, "tree", attempts) }
@@ -396,6 +413,8 @@ internal class PhoneUseTextEntry(
     private var lastRequestedText: String = ""
 
     private fun clearByNodes(before: String?, attempts: MutableList<String>): String? {
+        if (host.tryCommitText("") && nodeReadbackVerified(before, host.fieldText(), "")) return "commit_text_clear"
+        attempts += "commitText 空字符串未能清空"
         if (host.trySetText("") && nodeReadbackVerified(before, host.fieldText(), "")) return "set_text_clear"
         attempts += "ACTION_SET_TEXT 空字符串未能清空"
         if (host.trySelectAll() && host.tryCut() && nodeReadbackVerified(before, host.fieldText(), "")) {
@@ -409,6 +428,9 @@ internal class PhoneUseTextEntry(
     }
 
     private fun replaceByNodes(text: String, before: String?, attempts: MutableList<String>): String? {
+        val committed = host.tryCommitText(text)
+        if (committed && nodeReadbackVerified(before, host.fieldText(), text)) return "commit_text"
+        attempts += if (committed) "commitText 已调用但回读不是目标文字" else "commitText 不可用或被拒绝"
         val setAccepted = host.trySetText(text)
         if (setAccepted && nodeReadbackVerified(before, host.fieldText(), text)) return "set_text"
         attempts += if (setAccepted) "ACTION_SET_TEXT 返回成功但文字没有变成目标" else "ACTION_SET_TEXT 被拒绝"

@@ -1,6 +1,7 @@
 package com.zhousl.aether.phoneuse
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
@@ -23,6 +24,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Display
+import android.view.inputmethod.TextAttribute
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -167,6 +169,11 @@ class PhoneUseAccessibilityService : AccessibilityService() {
             else registerReceiver(screenReceiver, filter)
             screenReceiverRegistered = true
         }
+        if (Build.VERSION.SDK_INT >= 33) {
+            serviceInfo = serviceInfo?.apply {
+                flags = flags or AccessibilityServiceInfo.FLAG_INPUT_METHOD_EDITOR
+            }
+        }
         scheduleOverlayRefresh()
     }
 
@@ -276,13 +283,25 @@ class PhoneUseAccessibilityService : AccessibilityService() {
         var windowIds = emptySet<Int>()
         try {
             val snapshotId = UUID.randomUUID().toString().take(8)
+            val eidAssigner = PhoneUseEidAssigner()
             var count = 0
             var truncated = false
             fun visit(node: AccessibilityNodeInfo, depth: Int, windowId: Int, windowPackage: String, digest: MessageDigest,
-                parents: List<AncestorAnchor> = emptyList()): JSONObject? {
+                path: String, parents: List<AncestorAnchor> = emptyList()): JSONObject? {
                 if (count >= 1200 || depth >= 48) { truncated = true; return null }
-                val id = "$snapshotId:${count++}"
-                snapshotNodes[id] = ObservedNode(AccessibilityNodeInfo.obtain(node), identity(node, windowPackage),
+                count++
+                val eid = eidAssigner.assign(phoneUseElementFingerprint(
+                    packageName = node.packageName?.toString().orEmpty().ifBlank { windowPackage },
+                    className = node.className?.toString().orEmpty(),
+                    viewId = node.viewIdResourceName.orEmpty(),
+                    editable = node.isEditable,
+                    password = node.isPassword,
+                    text = if (node.isPassword) "" else node.text?.toString().orEmpty(),
+                    description = if (node.isPassword) "" else node.contentDescription?.toString().orEmpty(),
+                    hint = node.hintText?.toString().orEmpty(),
+                    path = path,
+                ))
+                snapshotNodes[eid] = ObservedNode(AccessibilityNodeInfo.obtain(node), identity(node, windowPackage),
                     parents.mapNotNull { anchorKey(it, node.isEditable) }.take(2), windowId, windowPackage)
                 val rect = Rect().also(node::getBoundsInScreen)
                 val actions = node.actionList.map { it.id }.toSet()
@@ -305,16 +324,17 @@ class PhoneUseAccessibilityService : AccessibilityService() {
                     put("password", node.isPassword)
                     put("actionable", node.isVisibleToUser && node.isEnabled && !rect.isEmpty && actions.isNotEmpty())
                 }
-                // The digest excludes ephemeral node_id values, so repeated observations can be compared.
+                // The digest excludes eid values. The same control keeps its eid across observations.
                 digest.update(result.toString().toByteArray(Charsets.UTF_8))
                 digest.update('['.code.toByte())
-                result.put("node_id", id)
+                result.put("eid", eid)
+                result.put("node_id", eid)
                 val children = JSONArray()
                 val childParents = listOf(ancestorAnchor(node)) + parents.take(5)
                 for (index in 0 until node.childCount) {
                     if (count >= 1200) { truncated = true; break }
                     val child = node.getChild(index) ?: continue
-                    try { visit(child, depth + 1, windowId, windowPackage, digest, childParents)?.let(children::put) } finally { child.recycle() }
+                    try { visit(child, depth + 1, windowId, windowPackage, digest, "$path/$index", childParents)?.let(children::put) } finally { child.recycle() }
                 }
                 digest.update(']'.code.toByte())
                 result.put("children", children)
@@ -335,7 +355,8 @@ class PhoneUseAccessibilityService : AccessibilityService() {
                         put("focused", window.isFocused)
                         put("type", window.type)
                         val digest = MessageDigest.getInstance("SHA-256")
-                        put("root", visit(root, 0, window.id, root.packageName?.toString().orEmpty(), digest))
+                        val windowPackage = root.packageName?.toString().orEmpty()
+                        put("root", visit(root, 0, window.id, windowPackage, digest, "t${window.type}:$windowPackage"))
                         put("content_hash", digest.digest().joinToString("") { "%02x".format(it) })
                         put("updates_since_last_observe", updates[window.id] ?: 0)
                     })
@@ -351,7 +372,8 @@ class PhoneUseAccessibilityService : AccessibilityService() {
                         windowTrees.put(JSONObject().apply {
                             put("window_id", root.windowId)
                             put("package", root.packageName?.toString().orEmpty())
-                            put("root", visit(root, 0, root.windowId, root.packageName?.toString().orEmpty(), digest))
+                            val windowPackage = root.packageName?.toString().orEmpty()
+                            put("root", visit(root, 0, root.windowId, windowPackage, digest, "active:$windowPackage"))
                             put("content_hash", digest.digest().joinToString("") { "%02x".format(it) })
                             put("updates_since_last_observe", updates[root.windowId] ?: 0)
                         })
@@ -364,15 +386,19 @@ class PhoneUseAccessibilityService : AccessibilityService() {
                 put("mode", if (displayId == Display.DEFAULT_DISPLAY) "foreground" else "virtual_display")
                 put("width", width)
                 put("height", height)
-                put("coordinate_space", "normalized_0_1000")
+                val realScreen = displayId == Display.DEFAULT_DISPLAY
+                put("coordinate_space", if (realScreen) "host_internal" else "normalized_0_1000")
+                put("model_click_coordinates", if (realScreen) "forbidden" else "normalized_0_1000")
                 put("bounds_coordinate_space", "display_pixels")
+                put("element_id", "eid")
+                put("id_migration", PhoneUseElementIdMigration)
                 put("windows", windowTrees)
                 put("snapshot_id", snapshotId)
                 put("node_count", count)
                 put("truncated", truncated)
                 put("stdout", if (count == 0) {
-                    "没有可读的无障碍节点。微信或空树只能用 text 把整句放进剪贴板，聚焦底部输入栏，避开微信键盘后长按并点「粘贴」。没有节点时用底部输入栏坐标。不要把未校验的 fill_text 当成成功，不要逐键打拼音，不要换输入法，不要请用户打字或发送，也不要在气泡确认前声称已发送。"
-                } else "Phone Use element tree. Use node_id for actions; request screenshot only if needed.")
+                    "没有可读的无障碍节点。文字仍调用 text：宿主先走无障碍 commitText，再 ACTION_SET_TEXT，剪贴板长按粘贴只是显式回退，不是微信或空树的默认路径。不要提交 0..1000 坐标。不要把未校验的 fill_text 当成成功，不要逐键打拼音，不要换输入法，不要请用户打字或发送，也不要在气泡确认前声称已发送。"
+                } else "Phone Use element tree. Use eid for tap, click, long_click, scroll, and text. node_id is a deprecated alias of the same eid. Do not send normalized 0..1000 click coordinates.")
             }
             return ObservationSnapshot(json, snapshotNodes, windowIds)
         } catch (cause: Throwable) {
@@ -419,7 +445,10 @@ class PhoneUseAccessibilityService : AccessibilityService() {
         if (actionInvalidated || observedDisplayId != displayId) {
             elementError("stale_observation", "A previous action or a display change invalidated this observation. Use the fresh observation returned with this error.")
         }
-        val reference = nodes[id] ?: elementError("unknown_node", "Unknown node_id. Use a node_id from the latest observation.")
+        val reference = nodes[id] ?: elementError(
+            "unknown_node",
+            "Unknown eid. $PhoneUseElementIdMigration",
+        )
         val currentWindows = displayWindows(displayId)
         val window = currentWindows.firstOrNull { it.id == reference.windowId }
         // Older Android releases can expose only the active root, before a windows list is available.
@@ -514,6 +543,10 @@ class PhoneUseAccessibilityService : AccessibilityService() {
             }
             else -> error("Unsupported element action '$action'.")
         }
+        if (action == "text" && tryAccessibilityCommitText(node, text)) {
+            actionInvalidated = true
+            return reference.rebound
+        }
         val arguments = if (action == "text") Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         } else null
@@ -521,7 +554,7 @@ class PhoneUseAccessibilityService : AccessibilityService() {
             elementError("action_unsupported", "The target does not support $action. Choose a suitable actionable element from the fresh observation.")
         }
         if (!node.performAction(actionId, arguments)) {
-            elementError("action_rejected", "The target rejected $action. Inspect the fresh observation; use a real screenshot/gesture tool call if alternatives are allowed.")
+            elementError("action_rejected", "The target rejected $action. Inspect the fresh observation and choose another eid.")
         }
         actionInvalidated = true
         return reference.rebound
@@ -534,11 +567,35 @@ class PhoneUseAccessibilityService : AccessibilityService() {
             try { root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) } finally { root.recycle() }
         }.firstOrNull() ?: error("No focused input on this display. Use text with an editable node_id.")
         try {
+            if (tryAccessibilityCommitText(focused, text)) {
+                actionInvalidated = true
+                return
+            }
             check(focused.isEditable && focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
             })) { "Focused field rejected text. Use an editable node_id." }
         } finally { focused.recycle() }
         actionInvalidated = true
+    }
+
+    /**
+     * Accessibility input channel. API 33+ exposes an [android.accessibilityservice.InputMethod]
+     * whose [android.accessibilityservice.InputMethod.AccessibilityInputConnection.commitText]
+     * writes through the editor's InputConnection. Older releases have no such channel.
+     */
+    internal fun tryAccessibilityCommitText(node: AccessibilityNodeInfo, text: CharSequence): Boolean {
+        if (Build.VERSION.SDK_INT < 33) return false
+        return runCatching { commitTextOnInputConnection(node, text) }.getOrDefault(false)
+    }
+
+    @Suppress("NewApi")
+    private fun commitTextOnInputConnection(node: AccessibilityNodeInfo, text: CharSequence): Boolean {
+        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        val method = getInputMethod() ?: return false
+        if (!method.currentInputStarted) return false
+        val connection = method.currentInputConnection ?: return false
+        connection.commitText(text, 1, null as TextAttribute?)
+        return true
     }
 
     suspend fun gesture(displayId: Int, x1: Int, y1: Int, x2: Int = x1, y2: Int = y1, duration: Long = 80) {
@@ -633,8 +690,9 @@ class PhoneUseAccessibilityService : AccessibilityService() {
         screenWidth: Int,
         screenHeight: Int,
         sendAfterVerify: Boolean = false,
+        elementId: String? = null,
     ): TextEntryOutcome {
-        val host = LiveTextEntryHost(displayId, anchorX, anchorY, screenWidth, screenHeight)
+        val host = LiveTextEntryHost(displayId, anchorX, anchorY, screenWidth, screenHeight, elementId)
         try {
             val outcome = PhoneUseTextEntry(host).enter(text, sendAfterVerify)
             android.util.Log.i(
@@ -854,8 +912,15 @@ class PhoneUseAccessibilityService : AccessibilityService() {
         private val anchorY: Int?,
         requestedWidth: Int,
         requestedHeight: Int,
+        elementId: String? = null,
     ) : PhoneUseTextHost {
-        private var field: AccessibilityNodeInfo? = findTextTarget(displayId)
+        private var field: AccessibilityNodeInfo? = fieldFor(elementId)
+
+        private fun fieldFor(elementId: String?): AccessibilityNodeInfo? {
+            val requested = elementId?.trim()?.takeIf { it.isNotEmpty() }?.let { nodes[it]?.node }
+            if (requested != null && isTextTarget(requested)) return AccessibilityNodeInfo.obtain(requested)
+            return findTextTarget(displayId)
+        }
         override val weChat: Boolean
         override val emptyTree: Boolean
         override val density: Float = resources.displayMetrics.density.coerceAtLeast(1f)
@@ -890,6 +955,11 @@ class PhoneUseAccessibilityService : AccessibilityService() {
             val node = field ?: findTextTarget(displayId)?.also { field = it } ?: return null
             runCatching { node.refresh() }
             return node.text?.toString().orEmpty()
+        }
+
+        override fun tryCommitText(text: String): Boolean {
+            val node = field ?: findTextTarget(displayId)?.also { field = it } ?: return false
+            return tryAccessibilityCommitText(node, text)
         }
 
         override fun trySetText(text: String): Boolean = performTextAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {

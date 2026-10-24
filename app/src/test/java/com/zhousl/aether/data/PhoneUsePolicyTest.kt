@@ -69,7 +69,8 @@ class PhoneUsePolicyTest {
     }
 
     @Test fun observationsFollowUserPreferenceAndGateExplicitAlternatives() {
-        val settings = AppSettings(phoneUseInputStrategy = PhoneUseInputStrategy.ScreenshotFirst,
+        val settings = AppSettings(phoneUseVirtualDisplayEnabled = true,
+            phoneUseInputStrategy = PhoneUseInputStrategy.ScreenshotFirst,
             phoneUseAllowStrategySwitch = false)
         assertEquals(PhoneUseInputStrategy.ScreenshotFirst, resolvePhoneUseInputStrategy(settings, "observe", ""))
         assertEquals(PhoneUseInputStrategy.ScreenshotFirst, resolvePhoneUseInputStrategy(settings, "click", ""))
@@ -80,7 +81,7 @@ class PhoneUsePolicyTest {
     }
 
     @Test fun outputPreferenceChoosesWhenBothTargetsExistAndRejectsDisabledFallback() {
-        val elements = AppSettings(phoneUseAllowStrategySwitch = false)
+        val elements = AppSettings(phoneUseVirtualDisplayEnabled = true, phoneUseAllowStrategySwitch = false)
         assertTrue(phoneUseUsesElementAction(elements, "click", true, true, ""))
         assertThrows(IllegalArgumentException::class.java) { phoneUseUsesElementAction(elements, "click", false, true, "") }
         // A stray node_id cannot disguise a swipe as an element operation.
@@ -92,9 +93,43 @@ class PhoneUsePolicyTest {
     }
 
     @Test fun allowedFallbackAndExplicitOverrideDoNotAlterPreferences() {
-        val settings = AppSettings(phoneUseOutputStrategy = PhoneUseOutputStrategy.GestureFirst)
+        val settings = AppSettings(phoneUseVirtualDisplayEnabled = true,
+            phoneUseOutputStrategy = PhoneUseOutputStrategy.GestureFirst)
         assertTrue(phoneUseUsesElementAction(settings, "click", true, true, "element_first"))
         assertTrue(phoneUseUsesElementAction(settings, "click", true, false, ""))
         assertEquals(PhoneUseOutputStrategy.GestureFirst, settings.phoneUseOutputStrategy)
+    }
+
+    @Test fun realScreenForcesTreeFirstAndRejectsStrategyBypass() {
+        val settings = AppSettings(
+            phoneUseInputStrategy = PhoneUseInputStrategy.ScreenshotFirst,
+            phoneUseOutputStrategy = PhoneUseOutputStrategy.GestureFirst,
+            phoneUseAllowStrategySwitch = true,
+        )
+        assertTrue(phoneUseTargetsRealScreen(settings))
+        assertEquals(PhoneUseInputStrategy.ElementTreeFirst, resolvePhoneUseInputStrategy(settings, "observe", ""))
+        assertEquals(PhoneUseInputStrategy.ElementTreeFirst, resolvePhoneUseInputStrategy(settings, "start", ""))
+        assertEquals(PhoneUseInputStrategy.ElementTreeFirst, resolvePhoneUseInputStrategy(settings, "click", "element_tree_first"))
+        assertThrows(IllegalArgumentException::class.java) { resolvePhoneUseInputStrategy(settings, "screenshot", "") }
+        assertThrows(IllegalArgumentException::class.java) { resolvePhoneUseInputStrategy(settings, "observe", "screenshot_first") }
+        assertThrows(IllegalArgumentException::class.java) {
+            phoneUseUsesElementAction(settings, "click", hasNode = true, hasCoordinates = true, override = "")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            phoneUseUsesElementAction(settings, "click", hasNode = true, hasCoordinates = false, override = "gesture_first")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            phoneUseUsesElementAction(settings, "text", hasNode = false, hasCoordinates = true, override = "")
+        }
+        assertTrue(phoneUseUsesElementAction(settings, "click", hasNode = true, hasCoordinates = false, override = ""))
+        assertTrue(phoneUseUsesElementAction(settings, "scroll", hasNode = true, hasCoordinates = false, override = "element_first"))
+        assertFalse(phoneUseUsesElementAction(settings, "swipe", hasNode = false, hasCoordinates = true, override = ""))
+        assertEquals(PhoneUseInputStrategy.ScreenshotFirst, settings.phoneUseInputStrategy)
+        assertTrue(settings.phoneUseAllowStrategySwitch)
+        val arguments = org.json.JSONObject().put("x", 10).put("node_id", "legacy")
+        assertEquals("e1", phoneUseTargetElementId(org.json.JSONObject().put("eid", "e1").put("node_id", "legacy")))
+        assertEquals("legacy", phoneUseTargetElementId(arguments))
+        assertTrue(realScreenModelCoordinatesSupplied(arguments))
+        assertFalse(realScreenModelCoordinatesSupplied(org.json.JSONObject().put("eid", "e1")))
     }
 }

@@ -1060,7 +1060,7 @@
     <string name="file_manager_view_list">列表视图</string>
     <string name="common_confirm">确定</string>
     <string name="phone_use_accessibility_description">允许智能体读取屏幕元素并执行点击、手势和文字输入。仅在请求时截图。启用此服务后可使用手机操控。</string>
-    <string name="phone_use_description">手机操控通过 Android 无障碍在前台操控应用。智能体优先读取元素树，仅在元素不足时请求截图。</string>
+    <string name="phone_use_description">手机操控通过 Android 无障碍在前台操控应用。真机前台固定先读元素树，并用稳定 eid 操作。模型不能提交 0..1000 点击坐标。文字输入优先走无障碍 commitText。</string>
     <string name="phone_use_foreground">前台</string>
     <string name="phone_use_foreground_description">通过无障碍读取和操作屏幕元素，无需 Root 或 Shizuku。</string>
     <string name="phone_use_execution_mode">运行模式</string>
@@ -1069,7 +1069,7 @@
     <string name="phone_use_accessibility_missing">请在系统无障碍设置中启用 Aether。若已经启用，可关闭再开启以重新连接。</string>
     <string name="phone_use_accessibility_ready">无障碍已连接，手机操控将操控前台屏幕。</string>
     <string name="phone_use_onboarding_message">手机操控通过 Android 无障碍让智能体操作屏幕上的应用。Root 和 Shizuku 仅用于可选的后台虚拟屏幕。</string>
-    <string name="phone_use_onboarding_description">在无障碍设置中启用 Aether。智能体优先读取元素，需要时再截图或坐标点击。之后可在手机操控设置中启用虚拟屏幕。</string>
+    <string name="phone_use_onboarding_description">在无障碍设置中启用 Aether。真机前台按元素树和 eid 操作，不使用归一化点击坐标。截图优先和坐标手势只对虚拟屏幕生效。</string>
     <string name="phone_use_enabled">启用手机操控</string>
     <string name="phone_use_input_strategy">输入策略</string>
     <string name="phone_use_output_strategy">输出策略</string>
@@ -1078,6 +1078,8 @@
     <string name="phone_use_element_first">元素操作优先</string>
     <string name="phone_use_gesture_first">坐标手势优先</string>
     <string name="phone_use_allow_strategy_switch">允许智能体手动切换到备选策略</string>
+    <string name="phone_use_real_screen_policy">真机前台固定使用元素树。点击、长按、滚动和文字都使用稳定 eid。模型不能提交 0..1000 点击坐标。文字输入先走无障碍 commitText，其次设置文本，剪贴板粘贴只作为最后回退。截图优先、坐标手势优先和策略切换在这里不会生效。</string>
+    <string name="phone_use_virtual_strategy_note">下面的策略只对虚拟屏幕生效。真机前台仍按元素树和 eid 操作。</string>
     <string name="phone_use_visual_feedback">视觉反馈</string>
     <string name="phone_use_show_commentary">思考气泡</string>
     <string name="phone_use_show_commentary_description">显示右侧进度与思考说明</string>

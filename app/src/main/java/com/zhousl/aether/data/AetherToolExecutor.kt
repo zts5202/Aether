@@ -224,9 +224,12 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
     put(
         "description",
         "Operate Phone Use through Android Accessibility on the foreground screen, or a Virtual Display when configured. " +
-            "Default observations and action results are element trees. Prefer node_id for tap/click, long_click, text, and scroll. " +
-            "observe/start and action results follow the configured input strategy. Use tree/screenshot or input_strategy to request an alternative only when strategy switching is allowed. Unrelated content events do not expire IDs: the target is refreshed and checked at execution. Target errors include a fresh observation when permitted. Use visible, enabled, actionable elements; never guess a replacement by index. " +
-            "Coordinate tap/swipe is available as a fallback, normalized 0..1000 on each axis. " +
+            "On the real screen, observations and actions are element_tree_first. screenshot_first, gesture_first, and strategy switching cannot bypass the tree. " +
+            "Every interactive node has a stable eid. Pass eid for tap, click, long_click, scroll, and text. " +
+            "node_id is a deprecated alias of eid. Do not send normalized 0..1000 coordinates for clicks; the real screen rejects them. " +
+            "Typing uses accessibility InputConnection.commitText first, then ACTION_SET_TEXT. Clipboard paste is an explicit last resort, including for WeChat and an empty tree. " +
+            "Unrelated content events do not expire an eid: the target is refreshed and checked at execution. Target errors include a fresh observation when permitted. Use visible, enabled, actionable elements; never guess a replacement by index. " +
+            "Virtual Display may still use its configured strategy. " +
             "When finished, stop with return_to_aether=true can bring the user back to Aether (foreground mode only). Omit it to leave the result visible in the controlled app. " +
             "Use only when Phone Use is selected in the composer; foreground actions change the screen visible to the user.",
     )
@@ -239,9 +242,10 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
                 JSONObject().apply {
                     put("action", stringProperty("One of: list_apps, start, observe, tree, status, launch, tap, click, long_click, scroll, swipe, key, text, screenshot, stop. fill_text is an alias of text."))
                     put("return_to_aether", booleanProperty("For stop, foreground mode only: optionally return the user to Aether after finishing. Defaults to false; omit to leave the controlled app visible."))
-                    put("input_strategy", stringProperty("Optional observation override for this action: element_tree_first or screenshot_first. Requires alternative strategy switching to be allowed."))
-                    put("output_strategy", stringProperty("Optional output strategy for this action: element_first or gesture_first. node_id selects elements; coordinates select gestures. Requires switching permission for alternatives."))
-                    put("node_id", stringProperty("Element ID from the latest tree. Required for scroll; preferred for tap, click, long_click, and text."))
+                    put("input_strategy", stringProperty("Real screen forces element_tree_first. screenshot_first is rejected there and cannot bypass the tree. Virtual Display may pass element_tree_first or screenshot_first when strategy switching is allowed."))
+                    put("output_strategy", stringProperty("Real screen forces element actions by eid. gesture_first is rejected there. Virtual Display may pass element_first or gesture_first when strategy switching is allowed."))
+                    put("eid", stringProperty("A stable element id from the latest tree. Required for real-screen tap, click, long_click, scroll, and text. Reuse it across later observations and actions."))
+                    put("node_id", stringProperty("Deprecated alias of eid. Used only when eid is omitted. Snapshot ids of the form {snapshot}:{index} are no longer issued."))
                     put("direction", stringProperty("For scroll: forward/backward, down/up, or right/left."))
                     put("query", stringProperty("For list_apps: optional app label, package, or activity filter."))
                     put("include_system", booleanProperty("For list_apps: whether to include system apps."))
@@ -257,9 +261,9 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
                         put(
                             key,
                             integerProperty(
-                                "For ${if (key.length == 1) "tap" else "swipe"}: normalized $axis coordinate in 0..1000 " +
-                                    "(0 = left/top edge, 1000 = right/bottom edge), NOT screenshot or display pixels. " +
-                                    "Convert a screenshot pixel with pixel / image_$axis * 1000.",
+                                "Rejected for real-screen tap, click, long_click, and text. Do not submit normalized 0..1000 " +
+                                    "$axis coordinates for clicks, and do not convert screenshot pixels into them. " +
+                                    "Virtual Display swipe may still pass host-normalized 0..1000 values.",
                             ),
                         )
                     }
@@ -272,14 +276,15 @@ private fun agentModeToolDefinition(): JSONObject = JSONObject().apply {
                     put(
                         "text",
                         stringProperty(
-                            "For text/fill_text on WeChat (com.tencent.mm) or an empty tree with no editable node: this is the only input path. " +
-                                "It writes the full string to the clipboard, focuses the bottom input bar, dismisses or avoids com.tencent.wetype when it covers 粘贴, long-presses, and taps 粘贴. " +
-                                "If there is no tree, the host uses bottom input-bar coordinates. Optional x,y (normalized 0..1000) is that field. " +
+                            "For text/fill_text, pass eid when the tree has an editable node. The primary channel is accessibility InputConnection.commitText. " +
+                                "ACTION_SET_TEXT is the next fallback. Clipboard long-press paste is an explicit last resort, not the default for WeChat (com.tencent.mm) or an empty tree. " +
+                                "If those channels do not verify, the host may focus the bottom input bar, dismiss or avoid com.tencent.wetype when it covers 粘贴, long-press, and tap 粘贴. " +
+                                "Do not send normalized 0..1000 coordinates for this field. " +
                                 "Do not type pinyin key by key, do not tap IME keys, and do not ask the user to type, paste, or send. " +
                                 "Do not tell the user to switch input methods unless the reflection says the clipboard itself is unavailable. " +
-                                "A missing Editable node or \"Focused field rejected text\" must not stop the action; the host continues with clipboard paste and retries another long-press point. " +
+                                "A missing Editable node or \"Focused field rejected text\" must not stop the action; the host continues with the next text channel. " +
                                 "Success requires text_verified after readback or a screenshot of the target text. If text_verified is false, repeat the Chinese reflection verbatim and do not claim the message was sent. " +
-                                "Empty text clears by selecting all. Outside WeChat, text replaces an editable node_id or the focused field. Unicode is supported.",
+                                "Empty text clears by selecting all. Unicode is supported.",
                         ),
                     )
                     put(
